@@ -10,6 +10,7 @@ from typing import Any
 from fastapi import Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .auth import Principal, get_principal
@@ -50,17 +51,29 @@ class CreateSessionResponse(BaseModel):
     session_id: str
 
 
+_MAX_CODE_RETRIES = 5
+
+
 @app.post("/v1/sessions", response_model=CreateSessionResponse)
 def create_session(
     principal: Principal = Depends(get_principal),
     db: Session = Depends(get_db),
 ) -> CreateSessionResponse:
-    code = _new_code()
-    s = ShareSession(code=code, created_by=principal.user_id)
-    db.add(s)
-    db.commit()
-    db.refresh(s)
-    return CreateSessionResponse(code=s.code, session_id=s.id)
+    for _ in range(_MAX_CODE_RETRIES):
+        code = _new_code()
+        s = ShareSession(code=code, created_by=principal.user_id)
+        db.add(s)
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            continue
+        db.refresh(s)
+        return CreateSessionResponse(code=s.code, session_id=s.id)
+    raise HTTPException(
+        status_code=409,
+        detail="Could not allocate a unique session code; please try again",
+    )
 
 
 class CreateFileRequest(BaseModel):
@@ -253,6 +266,8 @@ def mark_chunk_uploaded(
     f = db.get(File, file_id)
     if f is None:
         raise HTTPException(status_code=404, detail="File not found")
+    if f.owner_id != principal.user_id:
+        raise HTTPException(status_code=403, detail="Only owner can upload chunks")
     if idx < 0 or idx >= f.chunk_count:
         raise HTTPException(status_code=400, detail="Invalid chunk index")
 

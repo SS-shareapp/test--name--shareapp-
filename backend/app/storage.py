@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import lru_cache
 
 import boto3
 
@@ -13,6 +14,7 @@ class PresignedPart:
     url: str
 
 
+@lru_cache(maxsize=1)
 def _client():
     if not settings.s3_endpoint_url:
         raise RuntimeError("S3_ENDPOINT_URL is not set")
