@@ -1,0 +1,18 @@
+[project]
+name = "shareapp-backend"
+version = "0.1.0"
+# FastAPI -> Pydantic currently depends on native wheels that don't yet support Python 3.14.
+requires-python = ">=3.11,<3.14"
+dependencies = [
+  "fastapi==0.115.12",
+  "uvicorn[standard]==0.34.2",
+  "sqlalchemy==2.0.41",
+  "pydantic==2.11.5",
+  "PyJWT==2.10.1",
+  "requests==2.32.3",
+  "boto3==1.35.92",
+  "python-multipart==0.0.20",
+]
+
+[tool.uv]
+dev-dependencies = []
