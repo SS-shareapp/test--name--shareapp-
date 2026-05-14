@@ -49,7 +49,8 @@ def _bearer_token(authorization: str | None) -> str | None:
 
 def get_principal(authorization: str | None = Header(default=None)) -> Principal:
     """
-    Dev mode: accepts any request, uses X-Debug-User header fallback.
+    Dev mode: accepts any request; uses the Bearer token value as user id,
+              or defaults to "dev-user" if no token is provided.
     Clerk mode: verifies JWT against JWKS.
     """
     if settings.auth_mode == "dev":
