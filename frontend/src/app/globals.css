@@ -1,14 +1,47 @@
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap');
+
+/* ──────────────────────────────────────────────────
+   DESIGN TOKENS
+   ────────────────────────────────────────────────── */
 :root {
-  --background: #f6f3ee;
-  --foreground: #151515;
-  --muted: #68645f;
-  --line: #d8d0c5;
-  --panel: #fffaf2;
+  /* 1. Backgrounds — warm off-whites, never pure white */
+  --background: #f5f3ee;
+  --background-alt: #eceae4;
+  --panel: #fdfcfa;
+  --panel-alt: #f8f6f1;
+  --surface: #fdfcfa;
+
+  /* 3. Text hierarchy — warm tones */
+  --foreground: #1a1814;
+  --heading: #111009;
+  --muted: #6b6560;
+  --muted-light: #9a9590;
+
+  /* 4. Borders — warm tinted */
+  --line: rgba(0,0,0,0.08);
+  --line-strong: rgba(0,0,0,0.14);
+
+  /* 5. Accent — teal brought in aggressively */
   --accent: #0f766e;
   --accent-dark: #115e59;
+  --accent-glow: rgba(15,118,110,0.12);
+  --accent-soft: rgba(15,118,110,0.06);
+
+  /* Danger */
   --danger: #b42318;
+  --danger-soft: rgba(180,35,24,0.08);
+
+  /* 7. Shadows — warm tone */
+  --shadow-ambient: 0 2px 8px rgba(60,40,10,0.06);
+  --shadow-border: 0 0 0 1px rgba(0,0,0,0.07);
+  --shadow-card: inset 0 1px 0 rgba(255,255,255,0.9), 0 2px 8px rgba(60,40,10,0.06), 0 0 0 1px rgba(0,0,0,0.07);
+  --shadow-elevated: 0 1px 2px rgba(60,40,10,0.06), 0 4px 16px rgba(60,40,10,0.08);
+  --shadow-button: 0 1px 3px rgba(0,0,0,0.15), 0 0 0 1px rgba(0,0,0,0.08);
 }
 
+/* ──────────────────────────────────────────────────
+   RESET
+   ────────────────────────────────────────────────── */
 * {
   box-sizing: border-box;
 }
@@ -19,7 +52,21 @@ body {
   min-height: 100%;
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: 'Poppins', system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 1. Subtle grain texture overlay on body */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  pointer-events: none;
+  opacity: 0.035;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+  background-size: 256px 256px;
 }
 
 button,
@@ -37,17 +84,29 @@ button:disabled {
   opacity: 0.55;
 }
 
+/* ──────────────────────────────────────────────────
+   SHELL LAYOUT
+   ────────────────────────────────────────────────── */
 .shell {
   min-height: 100svh;
 }
 
+/* ──────────────────────────────────────────────────
+   6. TOPBAR — frosted glass, not flat
+   ────────────────────────────────────────────────── */
 .topbar {
+  position: sticky;
+  top: 0;
+  z-index: 100;
   display: flex;
   align-items: center;
   justify-content: space-between;
   min-height: 72px;
   padding: 0 32px;
-  border-bottom: 1px solid var(--line);
+  background: rgba(248,246,241,0.85);
+  backdrop-filter: blur(12px) saturate(1.3);
+  -webkit-backdrop-filter: blur(12px) saturate(1.3);
+  border-bottom: 1px solid rgba(0,0,0,0.08);
 }
 
 .brand {
@@ -55,7 +114,8 @@ button:disabled {
   align-items: center;
   gap: 12px;
   font-weight: 700;
-  letter-spacing: 0;
+  letter-spacing: -0.01em;
+  color: #2c2a27;
 }
 
 .brand-mark {
@@ -63,9 +123,10 @@ button:disabled {
   width: 34px;
   height: 34px;
   place-items: center;
-  background: var(--foreground);
-  color: var(--panel);
+  background: var(--accent);
+  color: #fdfcfa;
   border-radius: 8px;
+  box-shadow: 0 2px 8px var(--accent-glow);
 }
 
 .auth {
@@ -74,6 +135,9 @@ button:disabled {
   gap: 12px;
 }
 
+/* ──────────────────────────────────────────────────
+   WORKSPACE GRID
+   ────────────────────────────────────────────────── */
 .workspace {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 420px;
@@ -81,24 +145,33 @@ button:disabled {
   min-height: calc(100svh - 72px);
 }
 
+/* ──────────────────────────────────────────────────
+   8. STAGE (left) — gradient hero, accent decorations
+   ────────────────────────────────────────────────── */
 .stage {
   display: flex;
   flex-direction: column;
   justify-content: space-between;
   padding: 56px;
-  border-right: 1px solid var(--line);
+  border-right: 1px solid rgba(0,0,0,0.06);
+  background: linear-gradient(160deg, #f8f6f1 0%, #f0ede6 100%);
 }
 
 .headline {
   max-width: 760px;
+  position: relative;
+  z-index: 1;
 }
 
+/* 3. Headings — warm near-black, tight tracking */
 .headline h1 {
   margin: 0;
   max-width: 680px;
   font-size: clamp(54px, 8vw, 112px);
   line-height: 0.92;
-  letter-spacing: 0;
+  letter-spacing: -0.02em;
+  color: var(--heading);
+  font-weight: 800;
 }
 
 .headline p {
@@ -109,40 +182,70 @@ button:disabled {
   line-height: 1.45;
 }
 
+/* ──────────────────────────────────────────────────
+   RAIL (feature cards at bottom of stage)
+   ────────────────────────────────────────────────── */
 .rail {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 1px;
   overflow: hidden;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--line);
+  border-radius: 10px;
+  background: rgba(0,0,0,0.06);
+  box-shadow: var(--shadow-elevated);
+  position: relative;
+  z-index: 1;
 }
 
 .rail-item {
   min-height: 150px;
   padding: 22px;
-  background: rgba(255, 250, 242, 0.7);
+  background: var(--surface);
+  transition: background 180ms ease;
+}
+
+/* Alternate rail item backgrounds for visual variety */
+.rail-item:nth-child(2) {
+  background: var(--panel-alt);
+}
+
+/* Accent-tinted section for the third item */
+.rail-item:nth-child(3) {
+  background: rgba(15,118,110,0.04);
+}
+
+.rail-item:hover {
+  background: rgba(15,118,110,0.05);
 }
 
 .rail-item strong {
   display: block;
   margin-bottom: 42px;
   font-size: 13px;
-  color: var(--accent-dark);
+  color: var(--accent);
   text-transform: uppercase;
+  font-weight: 700;
+  letter-spacing: 0.04em;
 }
 
 .rail-item span {
   color: var(--muted);
   line-height: 1.4;
+  font-size: 14px;
 }
 
+/* ──────────────────────────────────────────────────
+   2. PANEL (right side) — warm card surface
+   ────────────────────────────────────────────────── */
 .panel {
   padding: 32px;
   background: var(--panel);
+  box-shadow: inset 1px 0 0 rgba(0,0,0,0.04);
 }
 
+/* ──────────────────────────────────────────────────
+   TABS
+   ────────────────────────────────────────────────── */
 .tabs {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -151,6 +254,7 @@ button:disabled {
   margin-bottom: 28px;
   border: 1px solid var(--line);
   border-radius: 8px;
+  background: var(--background-alt);
 }
 
 .tab {
@@ -158,13 +262,25 @@ button:disabled {
   border-radius: 6px;
   color: var(--muted);
   background: transparent;
+  font-weight: 500;
+  font-size: 14px;
+  transition: all 180ms ease;
+}
+
+.tab:hover:not(.active) {
+  color: var(--foreground);
+  background: rgba(0,0,0,0.03);
 }
 
 .tab.active {
-  color: white;
-  background: var(--foreground);
+  color: #fdfcfa;
+  background: var(--accent);
+  box-shadow: var(--shadow-button);
 }
 
+/* ──────────────────────────────────────────────────
+   FORM
+   ────────────────────────────────────────────────── */
 .form {
   display: grid;
   gap: 18px;
@@ -175,17 +291,33 @@ button:disabled {
   gap: 8px;
   color: var(--muted);
   font-size: 13px;
+  font-weight: 500;
 }
 
+/* 5. Inputs — warm backgrounds, accent focus ring */
 .input,
 .file-input {
   width: 100%;
   min-height: 48px;
   padding: 12px;
-  border: 1px solid var(--line);
+  border: 1px solid rgba(0,0,0,0.14);
   border-radius: 8px;
-  background: white;
+  background: var(--surface);
   color: var(--foreground);
+  font-size: 15px;
+  transition: border-color 180ms ease, box-shadow 180ms ease, background 180ms ease;
+}
+
+.input:focus,
+.file-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(15,118,110,0.15);
+  background: #fff;
+}
+
+.input::placeholder {
+  color: var(--muted-light);
 }
 
 .file-input {
@@ -193,8 +325,22 @@ button:disabled {
   place-items: center;
   min-height: 150px;
   text-align: center;
+  border-style: dashed;
+  border-width: 2px;
+  border-color: rgba(0,0,0,0.12);
+  background: rgba(15,118,110,0.02);
+  cursor: pointer;
+  transition: all 200ms ease;
 }
 
+.file-input:hover {
+  border-color: var(--accent);
+  background: rgba(15,118,110,0.04);
+}
+
+/* ──────────────────────────────────────────────────
+   5. BUTTONS — shadows for depth, accent-driven
+   ────────────────────────────────────────────────── */
 .primary,
 .secondary {
   display: inline-flex;
@@ -204,100 +350,598 @@ button:disabled {
   min-height: 48px;
   padding: 0 16px;
   border-radius: 8px;
+  font-weight: 600;
+  font-size: 14px;
+  transition: all 180ms ease;
 }
 
 .primary {
-  color: white;
+  color: #fdfcfa;
   background: var(--accent);
+  box-shadow: var(--shadow-button);
+}
+
+.primary:hover:not(:disabled) {
+  background: var(--accent-dark);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.2), 0 0 0 1px rgba(0,0,0,0.1);
+  transform: translateY(-1px);
+}
+
+.primary:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.15);
 }
 
 .secondary {
   color: var(--foreground);
-  background: transparent;
-  border: 1px solid var(--line);
+  background: rgba(0,0,0,0.03);
+  border: 1px solid rgba(0,0,0,0.15);
 }
 
+.secondary:hover:not(:disabled) {
+  background: rgba(0,0,0,0.07);
+  border-color: rgba(0,0,0,0.2);
+}
+
+/* ──────────────────────────────────────────────────
+   STATUS BOXES
+   ────────────────────────────────────────────────── */
 .status {
   min-height: 48px;
   padding: 14px;
-  border: 1px solid var(--line);
   border-radius: 8px;
   color: var(--muted);
   line-height: 1.35;
+  font-size: 14px;
+  background: var(--panel-alt);
+  box-shadow: var(--shadow-card);
 }
 
 .status.error {
   color: var(--danger);
-  border-color: rgba(180, 35, 24, 0.3);
+  background: var(--danger-soft);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.6), 0 0 0 1px rgba(180,35,24,0.15);
 }
 
+/* ──────────────────────────────────────────────────
+   SHARE CODE CARD
+   ────────────────────────────────────────────────── */
 .code {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
   padding: 18px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: white;
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: var(--shadow-card);
 }
 
 .code strong {
   font-size: 28px;
   letter-spacing: 0.08em;
+  color: var(--accent);
 }
 
+.code .muted {
+  font-size: 12px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+/* ──────────────────────────────────────────────────
+   PROGRESS BAR
+   ────────────────────────────────────────────────── */
 .progress {
   height: 8px;
   overflow: hidden;
   border-radius: 99px;
-  background: #e6ded3;
+  background: var(--background-alt);
+  box-shadow: inset 0 1px 2px rgba(0,0,0,0.06);
 }
 
 .progress span {
   display: block;
   height: 100%;
   width: var(--progress);
-  background: var(--accent);
+  background: linear-gradient(90deg, var(--accent), var(--accent-dark));
+  border-radius: 99px;
   transition: width 180ms ease;
 }
 
+/* ──────────────────────────────────────────────────
+   MUTED TEXT
+   ────────────────────────────────────────────────── */
 .muted {
   color: var(--muted);
 }
 
+/* ──────────────────────────────────────────────────
+   STATUS ICON ROWS — accent-colored icons
+   ────────────────────────────────────────────────── */
+.status svg {
+  color: var(--accent);
+  vertical-align: -2px;
+  margin-right: 4px;
+}
+
+/* ──────────────────────────────────────────────────
+   DROPZONE
+   ────────────────────────────────────────────────── */
+.dropzone {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 170px;
+  padding: 28px;
+  border: 2px dashed rgba(0,0,0,0.14);
+  border-radius: 10px;
+  background: rgba(15,118,110,0.02);
+  cursor: pointer;
+  transition: all 200ms ease;
+  text-align: center;
+}
+.dropzone:hover {
+  border-color: var(--accent);
+  background: rgba(15,118,110,0.05);
+}
+.dropzone.drag-active {
+  border-color: var(--accent);
+  background: rgba(15,118,110,0.06);
+  animation: pulse-border 1.2s ease infinite;
+  box-shadow: 0 0 24px rgba(15,118,110,0.12);
+}
+.dropzone.has-file {
+  border-style: solid;
+  border-color: #30a46c;
+  background: rgba(48,164,108,0.05);
+}
+.dropzone-input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+  width: 100%;
+  height: 100%;
+}
+.dropzone-icon {
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: rgba(15,118,110,0.08);
+  color: var(--accent);
+  transition: transform 200ms ease;
+}
+.dropzone:hover .dropzone-icon,
+.dropzone.drag-active .dropzone-icon {
+  transform: scale(1.1);
+}
+.dropzone.has-file .dropzone-icon {
+  background: rgba(48,164,108,0.1);
+  color: #30a46c;
+}
+.dropzone-text {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--foreground);
+}
+.dropzone-hint {
+  font-size: 12px;
+  color: var(--muted-light);
+}
+
+@keyframes pulse-border {
+  0%, 100% { border-color: var(--accent); }
+  50% { border-color: rgba(15,118,110,0.2); }
+}
+
+/* ──────────────────────────────────────────────────
+   THEME TOGGLE
+   ────────────────────────────────────────────────── */
+.theme-toggle {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  color: var(--muted);
+  background: rgba(0,0,0,0.03);
+  border: 1px solid rgba(0,0,0,0.08);
+  transition: all 180ms ease;
+}
+.theme-toggle:hover {
+  background: rgba(15,118,110,0.06);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* ──────────────────────────────────────────────────
+   DARK MODE — Glacier aesthetic
+   ────────────────────────────────────────────────── */
+html.dark-theme {
+  --background: #0a0e1a;
+  --background-alt: #111827;
+  --panel: rgba(17,24,50,0.75);
+  --panel-alt: rgba(25,32,60,0.5);
+  --surface: rgba(20,26,55,0.6);
+  --foreground: #eef0f6;
+  --heading: #f1f5f9;
+  --muted: #94a3b8;
+  --muted-light: #64748b;
+  --line: rgba(255,255,255,0.06);
+  --line-strong: rgba(255,255,255,0.12);
+  --accent: #2dd4bf;
+  --accent-dark: #14b8a6;
+  --accent-glow: rgba(45,212,191,0.15);
+  --accent-soft: rgba(45,212,191,0.08);
+  --danger: #f87171;
+  --danger-soft: rgba(248,113,113,0.1);
+  --shadow-ambient: 0 2px 8px rgba(0,0,0,0.4);
+  --shadow-border: 0 0 0 1px rgba(255,255,255,0.04);
+  --shadow-card: inset 0 1px 0 rgba(255,255,255,0.04), 0 2px 8px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.04);
+  --shadow-elevated: 0 4px 16px rgba(0,0,0,0.5);
+  --shadow-button: 0 1px 3px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.06);
+}
+
+html.dark-theme body {
+  background: var(--background);
+  background-image:
+    radial-gradient(ellipse 80% 50% at 50% 0%, rgba(45,212,191,0.06) 0%, transparent 70%),
+    radial-gradient(ellipse 50% 40% at 80% 100%, rgba(99,102,241,0.04) 0%, transparent 60%);
+}
+
+html.dark-theme body::before {
+  opacity: 0.02;
+}
+
+html.dark-theme .topbar {
+  background: rgba(10,14,26,0.8);
+  backdrop-filter: blur(16px) saturate(1.4);
+  border-bottom-color: rgba(255,255,255,0.06);
+}
+
+html.dark-theme .brand {
+  color: var(--foreground);
+}
+
+html.dark-theme .brand-mark {
+  background: var(--accent);
+  color: #0a0e1a;
+  box-shadow: 0 2px 12px var(--accent-glow);
+}
+
+html.dark-theme .stage {
+  background: linear-gradient(160deg, #0a0e1a 0%, #0f1629 50%, #0a1020 100%);
+  border-right-color: rgba(255,255,255,0.04);
+}
+
+html.dark-theme .stage::before {
+  background: radial-gradient(circle, rgba(45,212,191,0.08) 0%, transparent 70%);
+}
+
+html.dark-theme .stage::after {
+  background: radial-gradient(circle, rgba(99,102,241,0.06) 0%, transparent 70%);
+}
+
+html.dark-theme .headline h1 {
+  color: var(--heading);
+}
+
+html.dark-theme .rail {
+  background: rgba(255,255,255,0.04);
+  box-shadow: var(--shadow-elevated), 0 0 0 1px rgba(255,255,255,0.04);
+}
+
+html.dark-theme .rail-item {
+  background: rgba(17,24,50,0.6);
+  backdrop-filter: blur(8px);
+}
+html.dark-theme .rail-item:nth-child(2) {
+  background: rgba(20,28,55,0.5);
+}
+html.dark-theme .rail-item:nth-child(3) {
+  background: rgba(45,212,191,0.04);
+}
+html.dark-theme .rail-item:hover {
+  background: rgba(45,212,191,0.06);
+}
+
+html.dark-theme .panel {
+  background: var(--panel);
+  backdrop-filter: blur(16px);
+  box-shadow: inset 1px 0 0 rgba(255,255,255,0.03);
+}
+
+html.dark-theme .tabs {
+  background: rgba(255,255,255,0.03);
+  border-color: rgba(255,255,255,0.06);
+}
+
+html.dark-theme .tab.active {
+  background: var(--accent);
+  color: #0a0e1a;
+}
+
+html.dark-theme .tab:hover:not(.active) {
+  color: var(--foreground);
+  background: rgba(255,255,255,0.04);
+}
+
+html.dark-theme .input {
+  background: rgba(255,255,255,0.04);
+  border-color: rgba(255,255,255,0.08);
+  color: var(--foreground);
+}
+html.dark-theme .input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+  background: rgba(255,255,255,0.06);
+}
+html.dark-theme .input::placeholder {
+  color: var(--muted-light);
+}
+
+html.dark-theme .dropzone {
+  border-color: rgba(255,255,255,0.08);
+  background: rgba(45,212,191,0.03);
+}
+html.dark-theme .dropzone:hover {
+  border-color: var(--accent);
+  background: rgba(45,212,191,0.06);
+}
+html.dark-theme .dropzone.drag-active {
+  box-shadow: 0 0 30px var(--accent-glow);
+}
+html.dark-theme .dropzone.has-file {
+  border-color: #34d399;
+  background: rgba(52,211,153,0.06);
+}
+html.dark-theme .dropzone-icon {
+  background: rgba(45,212,191,0.1);
+}
+html.dark-theme .dropzone.has-file .dropzone-icon {
+  background: rgba(52,211,153,0.12);
+  color: #34d399;
+}
+
+html.dark-theme .primary {
+  background: var(--accent);
+  color: #0a0e1a;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.4), 0 0 12px var(--accent-glow);
+}
+html.dark-theme .primary:hover:not(:disabled) {
+  background: var(--accent-dark);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.5), 0 0 20px var(--accent-glow);
+}
+
+html.dark-theme .secondary {
+  color: var(--foreground);
+  background: rgba(255,255,255,0.04);
+  border-color: rgba(255,255,255,0.1);
+}
+html.dark-theme .secondary:hover:not(:disabled) {
+  background: rgba(255,255,255,0.08);
+  border-color: rgba(255,255,255,0.16);
+}
+
+html.dark-theme .status {
+  background: rgba(255,255,255,0.03);
+  box-shadow: var(--shadow-card);
+}
+
+html.dark-theme .status.error {
+  background: var(--danger-soft);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.03), 0 0 0 1px rgba(248,113,113,0.15);
+}
+
+html.dark-theme .code {
+  background: rgba(255,255,255,0.03);
+  box-shadow: var(--shadow-card);
+}
+
+html.dark-theme .code strong {
+  color: var(--accent);
+}
+
+html.dark-theme .progress {
+  background: rgba(255,255,255,0.06);
+  box-shadow: inset 0 1px 2px rgba(0,0,0,0.3);
+}
+
+html.dark-theme .progress span {
+  background: linear-gradient(90deg, var(--accent), var(--accent-dark));
+}
+
+html.dark-theme .theme-toggle {
+  background: rgba(255,255,255,0.04);
+  border-color: rgba(255,255,255,0.08);
+  color: var(--muted);
+}
+html.dark-theme .theme-toggle:hover {
+  background: rgba(45,212,191,0.08);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* ──────────────────────────────────────────────────
+   RESPONSIVE
+   ────────────────────────────────────────────────── */
 @media (max-width: 980px) {
+  /* Stack the two-column layout vertically */
   .workspace {
     grid-template-columns: 1fr;
+    min-height: unset;
   }
 
+  /* Stage left panel */
   .stage {
     min-height: auto;
     padding: 36px 24px;
     border-right: 0;
-    border-bottom: 1px solid var(--line);
+    border-bottom: 1px solid rgba(0,0,0,0.06);
     gap: 36px;
   }
 
+  /* Shrink the giant headline for tablet */
   .headline h1 {
-    font-size: clamp(44px, 15vw, 72px);
+    font-size: clamp(36px, 10vw, 64px);
   }
 
+  .headline p {
+    font-size: 17px;
+  }
+
+  /* Stack rail cards vertically on tablet */
   .rail {
     grid-template-columns: 1fr;
   }
 
   .rail-item {
-    min-height: 112px;
+    min-height: 100px;
   }
 
   .rail-item strong {
-    margin-bottom: 18px;
+    margin-bottom: 10px;
   }
 
-  .panel,
+  /* Fix topbar padding on tablet */
   .topbar {
     padding-left: 20px;
     padding-right: 20px;
+    min-height: 60px;
+  }
+
+  /* Fix panel padding on tablet */
+  .panel {
+    padding: 24px 20px;
+  }
+}
+
+html.dark-theme .stage {
+  border-bottom-color: rgba(255,255,255,0.04);
+}
+
+@media (max-width: 480px) {
+  /* Topbar — compact, full-width, no wasted space */
+  .topbar {
+    min-height: 52px;
+    padding: 0 16px;
+  }
+
+  /* Brand text size on phone */
+  .brand {
+    font-size: 15px;
+  }
+
+  /* Stage section — tight padding on phone */
+  .stage {
+    padding: 28px 16px;
+    gap: 28px;
+  }
+
+  /* Headline — much smaller on phone, never overflows */
+  .headline h1 {
+    font-size: clamp(28px, 9vw, 44px);
+    line-height: 1.0;
+    letter-spacing: -0.015em;
+  }
+
+  .headline p {
+    font-size: 15px;
+    line-height: 1.5;
+    margin-top: 16px;
+  }
+
+  /* Rail items — compact on phone */
+  .rail-item {
+    min-height: 80px;
+    padding: 16px;
+  }
+
+  /* Panel — tight side padding on phone */
+  .panel {
+    padding: 20px 16px;
+  }
+
+  /* Tabs — slightly smaller touch targets but still accessible */
+  .tab {
+    min-height: 40px;
+    font-size: 13px;
+  }
+
+  /* Dropzone — shorter on phone so it doesn't dominate */
+  .dropzone {
+    min-height: 130px;
+    padding: 20px 16px;
+    gap: 8px;
+  }
+
+  .dropzone-icon {
+    width: 40px;
+    height: 40px;
+  }
+
+  .dropzone-text {
+    font-size: 13px;
+  }
+
+  /* Share code card — stack vertically on phone */
+  .code {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 14px;
+    padding: 16px;
+  }
+
+  .code strong {
+    font-size: 22px;
+    letter-spacing: 0.06em;
+    word-break: break-all;
+  }
+
+  /* Make the copy button full-width when stacked */
+  .code .secondary {
+    width: 100%;
+    justify-content: center;
+  }
+
+  /* Input — comfortable tap height */
+  .input {
+    min-height: 48px;
+    font-size: 16px; /* prevents iOS zoom on focus */
+  }
+
+  /* Buttons — full width on phone */
+  .primary {
+    width: 100%;
+    min-height: 50px;
+    font-size: 15px;
+  }
+
+  /* Status boxes — smaller text on phone */
+  .status {
+    font-size: 13px;
+    padding: 12px;
+  }
+
+  /* Progress bar — slightly thicker for visibility */
+  .progress {
+    height: 10px;
+  }
+
+  /* Form gap — tighter on phone */
+  .form {
+    gap: 14px;
+  }
+
+  /* Tabs margin */
+  .tabs {
+    margin-bottom: 20px;
   }
 }

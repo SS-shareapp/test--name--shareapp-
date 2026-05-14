@@ -1,10 +1,27 @@
 "use client";
 
-import { SignedIn, SignedOut, SignInButton, UserButton, useAuth } from "@clerk/nextjs";
-import { ArrowDownToLine, ArrowUpFromLine, Check, Copy, KeyRound, Lock, Send, Shield } from "lucide-react";
-import { useMemo, useState } from "react";
+import {
+  ArrowDownToLine,
+  ArrowUpFromLine,
+  Check,
+  Copy,
+  KeyRound,
+  Lock,
+  Moon,
+  Send,
+  Shield,
+  Sun,
+  Upload,
+} from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DEFAULT_CHUNK_SIZE, MAX_FILE_BYTES } from "@/lib/constants";
-import { decryptChunk, encryptChunk, keyFromCode, randomSalt, sha256Hex } from "@/lib/browser-crypto";
+import {
+  decryptChunk,
+  encryptChunk,
+  keyFromCode,
+  randomSalt,
+  sha256Hex,
+} from "@/lib/browser-crypto";
 
 type UploadChunk = {
   idx: number;
@@ -38,7 +55,6 @@ type ReceiveManifest = {
 type Mode = "send" | "receive";
 
 export default function Home(): React.ReactElement {
-  const { getToken } = useAuth();
   const [mode, setMode] = useState<Mode>("send");
   const [file, setFile] = useState<File | null>(null);
   const [receiveCode, setReceiveCode] = useState("");
@@ -47,18 +63,60 @@ export default function Home(): React.ReactElement {
   const [status, setStatus] = useState("Ready");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [theme, setTheme] = useState<"light" | "dark">("light");
+  const [dragActive, setDragActive] = useState(false);
+  const [copied, setCopied] = useState(false);
 
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const progressLabel = useMemo(() => `${Math.round(progress * 100)}%`, [progress]);
 
-  async function authenticatedFetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
-    const token = await getToken();
-    return fetch(input, {
-      ...init,
-      headers: {
-        ...(init.headers ?? {}),
-        ...(token ? { Authorization: `Bearer ${token}` } : {})
-      }
+  // Theme init
+  useEffect(() => {
+    const saved = localStorage.getItem("shareapp-theme");
+    const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    const initial = saved === "dark" || (!saved && prefersDark) ? "dark" : "light";
+    setTheme(initial);
+    const html = document.documentElement;
+    html.classList.remove("light-theme", "dark-theme");
+    html.classList.add(initial === "dark" ? "dark-theme" : "light-theme");
+  }, []);
+
+  const toggleTheme = useCallback(() => {
+    setTheme((prev) => {
+      const next = prev === "dark" ? "light" : "dark";
+      const html = document.documentElement;
+      html.classList.remove("light-theme", "dark-theme");
+      html.classList.add(next === "dark" ? "dark-theme" : "light-theme");
+      localStorage.setItem("shareapp-theme", next);
+      return next;
     });
+  }, []);
+
+  // Drag events
+  const handleDrag = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.type === "dragenter" || e.type === "dragover") setDragActive(true);
+    if (e.type === "dragleave") setDragActive(false);
+  }, []);
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setDragActive(false);
+      if (busy) return;
+      const dropped = e.dataTransfer.files?.[0];
+      if (dropped) setFile(dropped);
+    },
+    [busy]
+  );
+
+  async function authenticatedFetch(
+    input: RequestInfo | URL,
+    init: RequestInit = {}
+  ): Promise<Response> {
+    return fetch(input, { ...init });
   }
 
   async function sendFile(): Promise<void> {
@@ -90,12 +148,16 @@ export default function Home(): React.ReactElement {
           sizeBytes: file.size,
           chunkSize: DEFAULT_CHUNK_SIZE,
           fileSha256,
-          salt
-        })
+          salt,
+        }),
       });
-      const created = (await createResponse.json()) as CreateShareResponse | { error: string };
+      const created = (await createResponse.json()) as
+        | CreateShareResponse
+        | { error: string };
       if (!createResponse.ok || "error" in created) {
-        throw new Error("error" in created ? created.error : "Unable to create share");
+        throw new Error(
+          "error" in created ? created.error : "Unable to create share"
+        );
       }
 
       setShareCode(created.code);
@@ -103,7 +165,10 @@ export default function Home(): React.ReactElement {
 
       for (const chunk of created.chunks) {
         const start = chunk.idx * created.chunkSize;
-        const plainChunk = file.slice(start, Math.min(start + created.chunkSize, file.size));
+        const plainChunk = file.slice(
+          start,
+          Math.min(start + created.chunkSize, file.size)
+        );
         setStatus(`Encrypting chunk ${chunk.idx + 1} of ${created.chunkCount}`);
         const encrypted = await encryptChunk(plainChunk, chunk.idx, key);
 
@@ -111,17 +176,23 @@ export default function Home(): React.ReactElement {
         const uploadResponse = await fetch(chunk.putUrl, {
           method: "PUT",
           headers: { "Content-Type": "application/octet-stream" },
-          body: encrypted
+          body: encrypted,
         });
         if (!uploadResponse.ok) {
           throw new Error(`R2 upload failed for chunk ${chunk.idx + 1}`);
         }
 
-        await authenticatedFetch(`/api/files/${created.fileId}/chunks/${chunk.idx}`, { method: "PUT" });
+        await authenticatedFetch(
+          `/api/files/${created.fileId}/chunks/${chunk.idx}`,
+          { method: "PUT" }
+        );
         setProgress((chunk.idx + 1) / created.chunkCount);
       }
 
-      const completeResponse = await authenticatedFetch(`/api/files/${created.fileId}/complete`, { method: "POST" });
+      const completeResponse = await authenticatedFetch(
+        `/api/files/${created.fileId}/complete`,
+        { method: "POST" }
+      );
       if (!completeResponse.ok) {
         throw new Error("Uploaded chunks but could not mark the file complete");
       }
@@ -147,10 +218,16 @@ export default function Home(): React.ReactElement {
 
     try {
       setStatus("Loading manifest");
-      const manifestResponse = await fetch(`/api/receive/${encodeURIComponent(code)}`);
-      const manifest = (await manifestResponse.json()) as ReceiveManifest | { error: string };
+      const manifestResponse = await fetch(
+        `/api/receive/${encodeURIComponent(code)}`
+      );
+      const manifest = (await manifestResponse.json()) as
+        | ReceiveManifest
+        | { error: string };
       if (!manifestResponse.ok || "error" in manifest) {
-        throw new Error("error" in manifest ? manifest.error : "Unable to load share");
+        throw new Error(
+          "error" in manifest ? manifest.error : "Unable to load share"
+        );
       }
 
       const target = manifest.files[0];
@@ -164,13 +241,23 @@ export default function Home(): React.ReactElement {
       const key = await keyFromCode(code, target.salt);
       const parts: Blob[] = [];
       for (const chunk of target.chunks) {
-        setStatus(`Downloading chunk ${chunk.idx + 1} of ${target.chunkCount}`);
+        setStatus(
+          `Downloading chunk ${chunk.idx + 1} of ${target.chunkCount}`
+        );
         const downloadResponse = await fetch(chunk.getUrl);
         if (!downloadResponse.ok) {
           throw new Error(`R2 download failed for chunk ${chunk.idx + 1}`);
         }
-        setStatus(`Decrypting chunk ${chunk.idx + 1} of ${target.chunkCount}`);
-        parts.push(await decryptChunk(await downloadResponse.blob(), chunk.idx, key));
+        setStatus(
+          `Decrypting chunk ${chunk.idx + 1} of ${target.chunkCount}`
+        );
+        parts.push(
+          await decryptChunk(
+            await downloadResponse.blob(),
+            chunk.idx,
+            key
+          )
+        );
         setProgress((chunk.idx + 1) / target.chunkCount);
       }
 
@@ -190,24 +277,33 @@ export default function Home(): React.ReactElement {
     }
   }
 
+  function copyCode() {
+    navigator.clipboard.writeText(shareCode);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  function formatSize(bytes: number): string {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  }
+
   return (
     <main className="shell">
       <header className="topbar">
         <div className="brand">
-          <span className="brand-mark">
-            <Shield size={18} />
-          </span>
           <span>Shareapp</span>
         </div>
         <div className="auth">
-          <SignedOut>
-            <SignInButton mode="modal">
-              <button className="secondary">Sign in</button>
-            </SignInButton>
-          </SignedOut>
-          <SignedIn>
-            <UserButton />
-          </SignedIn>
+          <button
+            className="theme-toggle"
+            onClick={toggleTheme}
+            title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+            aria-label="Toggle theme"
+          >
+            {theme === "dark" ? <Sun size={18} /> : <Moon size={18} />}
+          </button>
         </div>
       </header>
 
@@ -216,75 +312,109 @@ export default function Home(): React.ReactElement {
           <div className="headline">
             <h1>Encrypted file transfer by code.</h1>
             <p>
-              Send up to 1 GiB through Cloudflare R2. Files are encrypted in the browser before upload and unlocked by
-              the receiver&apos;s share code.
+              Send up to 1 GiB through Cloudflare R2. Files are encrypted in
+              the browser before upload and unlocked by the receiver&apos;s
+              share code.
             </p>
           </div>
           <div className="rail" aria-label="Transfer properties">
             <div className="rail-item">
               <strong>01</strong>
-              <span>Browser-side encryption keeps file bytes opaque to the app server.</span>
+              <span>
+                Browser-side encryption keeps file bytes opaque to the app
+                server.
+              </span>
             </div>
             <div className="rail-item">
               <strong>02</strong>
-              <span>Vercel issues short metadata responses and R2 presigned URLs only.</span>
+              <span>
+                Vercel issues short metadata responses and R2 presigned URLs
+                only.
+              </span>
             </div>
             <div className="rail-item">
               <strong>03</strong>
-              <span>Receiver enters the code, downloads chunks from R2, then decrypts locally.</span>
+              <span>
+                Receiver enters the code, downloads chunks from R2, then
+                decrypts locally.
+              </span>
             </div>
           </div>
         </div>
 
         <div className="panel">
           <div className="tabs" role="tablist" aria-label="Transfer mode">
-            <button className={`tab ${mode === "send" ? "active" : ""}`} onClick={() => setMode("send")}>
+            <button
+              className={`tab ${mode === "send" ? "active" : ""}`}
+              onClick={() => setMode("send")}
+            >
               Send
             </button>
-            <button className={`tab ${mode === "receive" ? "active" : ""}`} onClick={() => setMode("receive")}>
+            <button
+              className={`tab ${mode === "receive" ? "active" : ""}`}
+              onClick={() => setMode("receive")}
+            >
               Receive
             </button>
           </div>
 
           {mode === "send" ? (
             <div className="form">
-              <SignedOut>
-                <div className="status">Sign in to create a share code and upload encrypted chunks.</div>
-              </SignedOut>
-              <SignedIn>
-                <label className="label">
-                  File
-                  <input
-                    className="file-input"
-                    type="file"
-                    disabled={busy}
-                    onChange={(event) => setFile(event.target.files?.[0] ?? null)}
-                  />
-                </label>
-                {file ? (
-                  <div className="status">
-                    {file.name}
+              {/* Drag & Drop Zone */}
+              <div
+                className={`dropzone ${dragActive ? "drag-active" : ""} ${file ? "has-file" : ""}`}
+                onDragEnter={handleDrag}
+                onDragOver={handleDrag}
+                onDragLeave={handleDrag}
+                onDrop={handleDrop}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  className="dropzone-input"
+                  disabled={busy}
+                  onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                />
+                <div className="dropzone-icon">
+                  {file ? <Check size={24} /> : <Upload size={24} />}
+                </div>
+                <div className="dropzone-text">
+                  {file ? file.name : "Drag & drop or click to browse"}
+                </div>
+                <div className="dropzone-hint">
+                  {file
+                    ? `${formatSize(file.size)} selected`
+                    : "Max 1 GiB · All file types supported"}
+                </div>
+              </div>
+
+              <button
+                className="primary"
+                disabled={busy || !file}
+                onClick={sendFile}
+              >
+                <ArrowUpFromLine size={18} />
+                {busy ? "Sending…" : "Send file"}
+              </button>
+
+              {shareCode ? (
+                <div className="code">
+                  <div>
+                    <span className="muted">Share code</span>
                     <br />
-                    <span className="muted">{Math.ceil(file.size / 1024 / 1024)} MiB selected</span>
+                    <strong>{shareCode}</strong>
                   </div>
-                ) : null}
-                <button className="primary" disabled={busy || !file} onClick={sendFile}>
-                  <ArrowUpFromLine size={18} />
-                  Send file
-                </button>
-                {shareCode ? (
-                  <div className="code">
-                    <div>
-                      <span className="muted">Share code</span>
-                      <br />
-                      <strong>{shareCode}</strong>
-                    </div>
-                    <button className="secondary" onClick={() => navigator.clipboard.writeText(shareCode)} title="Copy code">
-                      <Copy size={18} />
-                    </button>
-                  </div>
-                ) : null}
-              </SignedIn>
+                  <button
+                    className="secondary"
+                    onClick={copyCode}
+                    title="Copy code"
+                  >
+                    {copied ? <Check size={18} /> : <Copy size={18} />}
+                    {copied ? "Copied!" : ""}
+                  </button>
+                </div>
+              ) : null}
             </div>
           ) : (
             <div className="form">
@@ -295,10 +425,16 @@ export default function Home(): React.ReactElement {
                   value={receiveCode}
                   disabled={busy}
                   placeholder="ABCD234XYZ"
-                  onChange={(event) => setReceiveCode(event.target.value.toUpperCase())}
+                  onChange={(event) =>
+                    setReceiveCode(event.target.value.toUpperCase())
+                  }
                 />
               </label>
-              <button className="primary" disabled={busy} onClick={receiveFile}>
+              <button
+                className="primary"
+                disabled={busy}
+                onClick={receiveFile}
+              >
                 <ArrowDownToLine size={18} />
                 Download file
               </button>
@@ -307,7 +443,11 @@ export default function Home(): React.ReactElement {
 
           <div className="form" style={{ marginTop: 24 }}>
             <div className="progress" aria-label={progressLabel}>
-              <span style={{ "--progress": progressLabel } as React.CSSProperties} />
+              <span
+                style={
+                  { "--progress": progressLabel } as React.CSSProperties
+                }
+              />
             </div>
             <div className={`status ${error ? "error" : ""}`}>
               {error || status}
