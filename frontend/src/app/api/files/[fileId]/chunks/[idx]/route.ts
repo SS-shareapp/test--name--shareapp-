@@ -3,10 +3,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { getFile, markChunk } from "@/lib/d1";
 
 type Params = {
-  params: {
+  params: Promise<{
     fileId: string;
     idx: string;
-  };
+  }>;
 };
 
 export async function PUT(_request: NextRequest, { params }: Params): Promise<NextResponse> {
@@ -15,7 +15,7 @@ export async function PUT(_request: NextRequest, { params }: Params): Promise<Ne
     return NextResponse.json({ error: "Authentication required" }, { status: 401 });
   }
 
-  const { fileId, idx: rawIdx } = params;
+  const { fileId, idx: rawIdx } = await params;
   const idx = Number(rawIdx);
   const file = await getFile(fileId);
   if (!file) {

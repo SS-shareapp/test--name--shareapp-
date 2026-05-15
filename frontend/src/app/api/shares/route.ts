@@ -32,7 +32,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   if (!filename) return badRequest("Filename is required");
   if (!Number.isSafeInteger(sizeBytes) || sizeBytes < 1) return badRequest("Invalid file size");
-  if (sizeBytes > MAX_FILE_BYTES) return badRequest("Files are limited to 1 GiB");
+  if (sizeBytes > MAX_FILE_BYTES) return badRequest("Files are limited to 2 GiB");
   if (!Number.isSafeInteger(chunkSize) || chunkSize < 256 * 1024 || chunkSize > 16 * 1024 * 1024) {
     return badRequest("Invalid chunk size");
   }

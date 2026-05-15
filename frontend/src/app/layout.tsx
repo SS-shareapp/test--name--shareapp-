@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { ClerkProvider } from "@clerk/nextjs";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -12,13 +11,16 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>): React.ReactElement {
-  const publishableKey = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ?? "pk_test_Y2xlcmsubG9jYWxob3N0JA==";
-
   return (
-    <ClerkProvider publishableKey={publishableKey}>
-      <html lang="en">
-        <body>{children}</body>
-      </html>
-    </ClerkProvider>
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var t=localStorage.getItem('shareapp-theme');if(t==='dark'||(!t&&window.matchMedia('(prefers-color-scheme:dark)').matches)){document.documentElement.classList.add('dark-theme')}else{document.documentElement.classList.add('light-theme')}}catch(e){}})();`,
+          }}
+        />
+      </head>
+      <body>{children}</body>
+    </html>
   );
 }
