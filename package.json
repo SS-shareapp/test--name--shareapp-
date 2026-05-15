@@ -1,0 +1,13 @@
+{
+  "name": "shareapp-root",
+  "private": true,
+  "scripts": {
+    "install:app": "npm install --prefix src",
+    "dev": "npm run dev --prefix src",
+    "build": "npm run build --prefix src",
+    "start": "npm run start --prefix src",
+    "lint": "npm run lint --prefix src",
+    "vercel:install": "npm install --save-dev vercel",
+    "vercel:build": "npx vercel build"
+  }
+}
