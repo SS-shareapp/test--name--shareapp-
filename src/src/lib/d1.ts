@@ -97,21 +97,21 @@ export async function createFile(row: FileRow): Promise<void> {
 export async function getShareByCode(code: string): Promise<ShareRow | null> {
   await ensureSchema();
   const sql = getDb();
-  const rows = await sql<ShareRow>`SELECT * FROM shares WHERE code = ${code} LIMIT 1`;
+  const rows = await sql<ShareRow[]>`SELECT * FROM shares WHERE code = ${code} LIMIT 1`;
   return rows[0] ?? null;
 }
 
 export async function getFile(id: string): Promise<FileRow | null> {
   await ensureSchema();
   const sql = getDb();
-  const rows = await sql<FileRow>`SELECT * FROM files WHERE id = ${id} LIMIT 1`;
+  const rows = await sql<FileRow[]>`SELECT * FROM files WHERE id = ${id} LIMIT 1`;
   return rows[0] ?? null;
 }
 
 export async function getFilesForShare(shareId: string): Promise<FileRow[]> {
   await ensureSchema();
   const sql = getDb();
-  return sql<FileRow>`SELECT * FROM files WHERE share_id = ${shareId} ORDER BY created_at ASC`;
+  return sql<FileRow[]>`SELECT * FROM files WHERE share_id = ${shareId} ORDER BY created_at ASC`;
 }
 
 export async function markChunk(fileId: string, idx: number): Promise<void> {
@@ -133,6 +133,6 @@ export async function completeFile(fileId: string): Promise<void> {
 export async function countChunks(fileId: string): Promise<number> {
   await ensureSchema();
   const sql = getDb();
-  const rows = await sql<{ count: number }>`SELECT COUNT(*) as count FROM chunks WHERE file_id = ${fileId}`;
+  const rows = await sql<{ count: number }[]>`SELECT COUNT(*) as count FROM chunks WHERE file_id = ${fileId}`;
   return Number(rows[0]?.count ?? 0);
 }
