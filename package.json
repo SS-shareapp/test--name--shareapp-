@@ -7,7 +7,10 @@
     "build": "npm run build --prefix src",
     "start": "npm run start --prefix src",
     "lint": "npm run lint --prefix src",
-    "vercel:install": "npm install --save-dev vercel",
-    "vercel:build": "npx vercel build"
+    "vercel:install": "npm install",
+    "vercel:build": "vercel build"
+  },
+  "devDependencies": {
+    "vercel": "^54.1.0"
   }
 }
