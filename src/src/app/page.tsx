@@ -252,10 +252,10 @@ export default function Home(): React.ReactElement {
                 <div className="status">Sign in to create a share code and upload encrypted chunks.</div>
               </SignedOut>
               <SignedIn>
-                <label className="label">
-                  File
+                <label className="label dropzone">
+                  <span className="dropzone-text">Click to choose a file...</span>
                   <input
-                    className="file-input"
+                    className="file-input hidden"
                     type="file"
                     disabled={busy}
                     onChange={(event) => setFile(event.target.files?.[0] ?? null)}

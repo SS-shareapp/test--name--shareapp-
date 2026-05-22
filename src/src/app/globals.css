@@ -139,8 +139,13 @@ button:disabled {
 }
 
 .panel {
-  padding: 32px;
+  padding: 40px;
   background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  backdrop-filter: blur(24px);
+  box-shadow: 0 30px 60px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  align-self: center;
 }
 
 .tabs {
@@ -300,4 +305,34 @@ button:disabled {
     padding-left: 20px;
     padding-right: 20px;
   }
+}
+
+.dropzone {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px dashed rgba(255, 255, 255, 0.2);
+  border-radius: 12px;
+  padding: 40px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  background: rgba(255, 255, 255, 0.02);
+  margin-top: 10px;
+}
+
+.dropzone:hover {
+  border-color: rgba(255, 255, 255, 0.5);
+  background: rgba(255, 255, 255, 0.05);
+  box-shadow: 0 0 20px rgba(255, 255, 255, 0.1);
+}
+
+.dropzone-text {
+  font-family: 'Outfit', sans-serif;
+  font-size: 1.1rem;
+  color: var(--muted);
+}
+
+.hidden {
+  display: none !important;
 }
