@@ -1,8 +1,7 @@
 "use client";
 
 import { SignedIn, SignedOut, SignInButton, UserButton, useAuth } from "@clerk/nextjs";
-import { ArrowDownToLine, ArrowUpFromLine, Copy, Shield, Loader2, Check } from "lucide-react";
-import toast from "react-hot-toast";
+import { ArrowDownToLine, ArrowUpFromLine, Check, Copy, KeyRound, Lock, Send, Shield } from "lucide-react";
 import { useMemo, useState } from "react";
 import { DEFAULT_CHUNK_SIZE, MAX_FILE_BYTES } from "@/lib/constants";
 import { decryptChunk, encryptChunk, keyFromCode, randomSalt, sha256Hex } from "@/lib/browser-crypto";
@@ -46,8 +45,8 @@ export default function Home(): React.ReactElement {
   const [shareCode, setShareCode] = useState("");
   const [progress, setProgress] = useState(0);
   const [status, setStatus] = useState("Ready");
+  const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const [copied, setCopied] = useState(false);
 
   const progressLabel = useMemo(() => `${Math.round(progress * 100)}%`, [progress]);
 
@@ -64,15 +63,16 @@ export default function Home(): React.ReactElement {
 
   async function sendFile(): Promise<void> {
     if (!file) {
-      toast.error("Choose a file first.");
+      setError("Choose a file first.");
       return;
     }
     if (file.size > MAX_FILE_BYTES) {
-      toast.error("Files are limited to 1 GiB.");
+      setError("Files are limited to 1 GiB.");
       return;
     }
 
     setBusy(true);
+    setError("");
     setShareCode("");
     setProgress(0);
 
@@ -125,11 +125,10 @@ export default function Home(): React.ReactElement {
       if (!completeResponse.ok) {
         throw new Error("Uploaded chunks but could not mark the file complete");
       }
-      toast.success("Upload complete");
-      setStatus("");
+      setStatus("Upload complete");
     } catch (caught) {
-      toast.error(caught instanceof Error ? caught.message : "Upload failed");
-      setStatus("");
+      setError(caught instanceof Error ? caught.message : "Upload failed");
+      setStatus("Ready");
     } finally {
       setBusy(false);
     }
@@ -138,11 +137,12 @@ export default function Home(): React.ReactElement {
   async function receiveFile(): Promise<void> {
     const code = receiveCode.trim().toUpperCase();
     if (!code) {
-      toast.error("Enter a share code.");
+      setError("Enter a share code.");
       return;
     }
 
     setBusy(true);
+    setError("");
     setProgress(0);
 
     try {
@@ -157,23 +157,15 @@ export default function Home(): React.ReactElement {
       if (!target) {
         throw new Error("No files found for this code");
       }
+      if (!target.completed) {
+        throw new Error("The sender has not finished uploading this file yet");
+      }
 
       const key = await keyFromCode(code, target.salt);
       const parts: Blob[] = [];
       for (const chunk of target.chunks) {
         setStatus(`Downloading chunk ${chunk.idx + 1} of ${target.chunkCount}`);
-        
-        let downloadResponse = await fetch(chunk.getUrl);
-        let retries = 0;
-        
-        // If R2 returns 404, the sender hasn't uploaded this chunk yet.
-        // We poll every 1 second until it's available (up to ~30 mins).
-        while (downloadResponse.status === 404 && retries < 1800) {
-          await new Promise(r => setTimeout(r, 1000));
-          downloadResponse = await fetch(chunk.getUrl);
-          retries++;
-        }
-
+        const downloadResponse = await fetch(chunk.getUrl);
         if (!downloadResponse.ok) {
           throw new Error(`R2 download failed for chunk ${chunk.idx + 1}`);
         }
@@ -189,11 +181,10 @@ export default function Home(): React.ReactElement {
       anchor.download = target.filename;
       anchor.click();
       URL.revokeObjectURL(url);
-      toast.success("Download complete");
-      setStatus("");
+      setStatus("Download complete");
     } catch (caught) {
-      toast.error(caught instanceof Error ? caught.message : "Download failed");
-      setStatus("");
+      setError(caught instanceof Error ? caught.message : "Download failed");
+      setStatus("Ready");
     } finally {
       setBusy(false);
     }
@@ -232,15 +223,15 @@ export default function Home(): React.ReactElement {
           <div className="rail" aria-label="Transfer properties">
             <div className="rail-item">
               <strong>01</strong>
-              <span>Complete Privacy. Your files are locked on your device before they ever touch the internet.</span>
+              <span>Browser-side encryption keeps file bytes opaque to the app server.</span>
             </div>
             <div className="rail-item">
               <strong>02</strong>
-              <span>Lightning Fast. Enjoy seamless, high-speed transfers without any restrictive limits.</span>
+              <span>Vercel issues short metadata responses and R2 presigned URLs only.</span>
             </div>
             <div className="rail-item">
               <strong>03</strong>
-              <span>Easy Sharing. Just share your unique code with the recipient to unlock the file instantly.</span>
+              <span>Receiver enters the code, downloads chunks from R2, then decrypts locally.</span>
             </div>
           </div>
         </div>
@@ -261,10 +252,10 @@ export default function Home(): React.ReactElement {
                 <div className="status">Sign in to create a share code and upload encrypted chunks.</div>
               </SignedOut>
               <SignedIn>
-                <label className="label dropzone">
-                  <span className="dropzone-text">Click to choose a file...</span>
+                <label className="label">
+                  File
                   <input
-                    className="file-input hidden"
+                    className="file-input"
                     type="file"
                     disabled={busy}
                     onChange={(event) => setFile(event.target.files?.[0] ?? null)}
@@ -278,7 +269,7 @@ export default function Home(): React.ReactElement {
                   </div>
                 ) : null}
                 <button className="primary" disabled={busy || !file} onClick={sendFile}>
-                  {busy ? <Loader2 size={18} className="animate-spin" /> : <ArrowUpFromLine size={18} />}
+                  <ArrowUpFromLine size={18} />
                   Send file
                 </button>
                 {shareCode ? (
@@ -288,13 +279,8 @@ export default function Home(): React.ReactElement {
                       <br />
                       <strong>{shareCode}</strong>
                     </div>
-                    <button className={`secondary ${copied ? 'copied' : ''}`} onClick={() => {
-                      navigator.clipboard.writeText(shareCode);
-                      toast.success("Code copied to clipboard!");
-                      setCopied(true);
-                      setTimeout(() => setCopied(false), 2000);
-                    }} title="Copy code">
-                      {copied ? <Check size={18} className="animate-pop" /> : <Copy size={18} />}
+                    <button className="secondary" onClick={() => navigator.clipboard.writeText(shareCode)} title="Copy code">
+                      <Copy size={18} />
                     </button>
                   </div>
                 ) : null}
@@ -313,24 +299,31 @@ export default function Home(): React.ReactElement {
                 />
               </label>
               <button className="primary" disabled={busy} onClick={receiveFile}>
-                {busy ? <Loader2 size={18} className="animate-spin" /> : <ArrowDownToLine size={18} />}
+                <ArrowDownToLine size={18} />
                 Download file
               </button>
             </div>
           )}
 
-          {busy && status ? (
-            <div className="form" style={{ marginTop: 28 }}>
-              <div className="progress" aria-label={progressLabel}>
-                <span style={{ "--progress": progressLabel } as React.CSSProperties} />
-              </div>
-              <div className="status" style={{ border: 'none', background: 'transparent', padding: 0, minHeight: 'auto', textAlign: 'center', opacity: 0.8 }}>
-                {status}
-                <br />
-                <span className="muted">{progressLabel}</span>
-              </div>
+          <div className="form" style={{ marginTop: 24 }}>
+            <div className="progress" aria-label={progressLabel}>
+              <span style={{ "--progress": progressLabel } as React.CSSProperties} />
             </div>
-          ) : null}
+            <div className={`status ${error ? "error" : ""}`}>
+              {error || status}
+              <br />
+              <span className="muted">{progressLabel}</span>
+            </div>
+            <div className="status">
+              <Lock size={16} /> AES-GCM chunks
+              <br />
+              <KeyRound size={16} /> Key derived from the share code
+              <br />
+              <Send size={16} /> Direct browser-to-R2 transfer
+              <br />
+              <Check size={16} /> 1 GiB enforced
+            </div>
+          </div>
         </div>
       </section>
     </main>
