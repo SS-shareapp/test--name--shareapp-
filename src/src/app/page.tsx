@@ -1,17 +1,13 @@
 "use client";
 
-import { SignedIn, SignedOut, SignInButton, UserButton, useAuth } from "@clerk/nextjs";
-import { ArrowDownToLine, ArrowUpFromLine, Copy, Shield, Loader2, Check } from "lucide-react";
-import toast from "react-hot-toast";
-import { useMemo, useState } from "react";
+import { SignedIn, SignedOut, SignInButton, useAuth } from "@clerk/nextjs";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { DEFAULT_CHUNK_SIZE, MAX_FILE_BYTES } from "@/lib/constants";
-import { decryptChunk, encryptChunk, keyFromCode, randomSalt, sha256Hex } from "@/lib/browser-crypto";
+import { encryptChunk, keyFromCode, randomSalt, sha256Hex } from "@/lib/browser-crypto";
+import { formatBytes } from "@/lib/utils";
+import Nav from "./components/Nav";
 
-type UploadChunk = {
-  idx: number;
-  putUrl: string;
-};
-
+type UploadChunk = { idx: number; putUrl: string };
 type CreateShareResponse = {
   code: string;
   fileId: string;
@@ -21,68 +17,71 @@ type CreateShareResponse = {
   chunks: UploadChunk[];
 };
 
-type ReceiveManifest = {
-  code: string;
-  files: Array<{
-    fileId: string;
-    filename: string;
-    sizeBytes: number;
-    chunkSize: number;
-    chunkCount: number;
-    fileSha256: string;
-    salt: string;
-    completed: boolean;
-    chunks: Array<{ idx: number; getUrl: string }>;
-  }>;
-};
-
-type Mode = "send" | "receive";
-
-export default function Home(): React.ReactElement {
+export default function Home() {
   const { getToken } = useAuth();
-  const [mode, setMode] = useState<Mode>("send");
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const [file, setFile] = useState<File | null>(null);
-  const [receiveCode, setReceiveCode] = useState("");
   const [shareCode, setShareCode] = useState("");
   const [progress, setProgress] = useState(0);
-  const [status, setStatus] = useState("Ready");
+  const [status, setStatus] = useState<"idle" | "working" | "success" | "error">("idle");
+  const [statusMsg, setStatusMsg] = useState("");
   const [busy, setBusy] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  const progressLabel = useMemo(() => `${Math.round(progress * 100)}%`, [progress]);
+  const pct = useMemo(() => Math.round(progress * 100), [progress]);
 
-  async function authenticatedFetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
+  // Scroll reveal
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((e) => {
+          if (e.isIntersecting) e.target.classList.add("in");
+        });
+      },
+      { threshold: 0.15 }
+    );
+    document.querySelectorAll(".reveal").forEach((el) => observer.observe(el));
+    return () => observer.disconnect();
+  }, []);
+
+  // API helpers
+  async function authFetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
     const token = await getToken();
     return fetch(input, {
       ...init,
       headers: {
         ...(init.headers ?? {}),
-        ...(token ? { Authorization: `Bearer ${token}` } : {})
-      }
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
     });
   }
 
-  async function sendFile(): Promise<void> {
-    if (!file) {
-      toast.error("Choose a file first.");
+  function selectFile(f: File | null) {
+    if (!f) return;
+    if (f.size > MAX_FILE_BYTES) {
+      setStatus("error");
+      setStatusMsg("File exceeds 1 GiB limit.");
       return;
     }
-    if (file.size > MAX_FILE_BYTES) {
-      toast.error("Files are limited to 1 GiB.");
-      return;
-    }
-
-    setBusy(true);
+    setFile(f);
     setShareCode("");
-    setProgress(0);
+    setStatus("idle");
+  }
 
+  async function sendFile(): Promise<void> {
+    if (!file) return;
+    setBusy(true);
+    setStatus("working");
+    setProgress(0);
+    setShareCode("");
     try {
-      setStatus("Hashing file");
+      setStatusMsg("Hashing...");
       const salt = randomSalt();
       const fileSha256 = await sha256Hex(file);
-
-      setStatus("Creating share code");
-      const createResponse = await authenticatedFetch("/api/shares", {
+      setStatusMsg("Creating share...");
+      const res = await authFetch("/api/shares", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -90,249 +89,581 @@ export default function Home(): React.ReactElement {
           sizeBytes: file.size,
           chunkSize: DEFAULT_CHUNK_SIZE,
           fileSha256,
-          salt
-        })
+          salt,
+        }),
       });
-      const created = (await createResponse.json()) as CreateShareResponse | { error: string };
-      if (!createResponse.ok || "error" in created) {
-        throw new Error("error" in created ? created.error : "Unable to create share");
-      }
-
-      setShareCode(created.code);
-      const key = await keyFromCode(created.code, salt);
-
-      for (const chunk of created.chunks) {
-        const start = chunk.idx * created.chunkSize;
-        const plainChunk = file.slice(start, Math.min(start + created.chunkSize, file.size));
-        setStatus(`Encrypting chunk ${chunk.idx + 1} of ${created.chunkCount}`);
-        const encrypted = await encryptChunk(plainChunk, chunk.idx, key);
-
-        setStatus(`Uploading chunk ${chunk.idx + 1} of ${created.chunkCount}`);
-        const uploadResponse = await fetch(chunk.putUrl, {
+      const data = (await res.json()) as CreateShareResponse | { error: string };
+      if (!res.ok || "error" in data) throw new Error("error" in data ? data.error : "Failed");
+      setShareCode(data.code);
+      const key = await keyFromCode(data.code, salt);
+      for (const chunk of data.chunks) {
+        const start = chunk.idx * data.chunkSize;
+        const plain = file.slice(start, Math.min(start + data.chunkSize, file.size));
+        setStatusMsg(`Encrypting & uploading ${chunk.idx + 1}/${data.chunkCount}`);
+        const enc = await encryptChunk(plain, chunk.idx, key);
+        const up = await fetch(chunk.putUrl, {
           method: "PUT",
           headers: { "Content-Type": "application/octet-stream" },
-          body: encrypted
+          body: enc,
         });
-        if (!uploadResponse.ok) {
-          throw new Error(`R2 upload failed for chunk ${chunk.idx + 1}`);
-        }
-
-        await authenticatedFetch(`/api/files/${created.fileId}/chunks/${chunk.idx}`, { method: "PUT" });
-        setProgress((chunk.idx + 1) / created.chunkCount);
+        if (!up.ok) throw new Error(`Chunk ${chunk.idx + 1} upload failed`);
+        await authFetch(`/api/files/${data.fileId}/chunks/${chunk.idx}`, { method: "PUT" });
+        setProgress((chunk.idx + 1) / data.chunkCount);
       }
-
-      const completeResponse = await authenticatedFetch(`/api/files/${created.fileId}/complete`, { method: "POST" });
-      if (!completeResponse.ok) {
-        throw new Error("Uploaded chunks but could not mark the file complete");
-      }
-      toast.success("Upload complete");
-      setStatus("");
-    } catch (caught) {
-      toast.error(caught instanceof Error ? caught.message : "Upload failed");
-      setStatus("");
+      const complete = await authFetch(`/api/files/${data.fileId}/complete`, { method: "POST" });
+      if (!complete.ok) throw new Error("Could not finalize upload");
+      setStatus("success");
+    } catch (e) {
+      setStatus("error");
+      setStatusMsg(e instanceof Error ? e.message : "Upload failed");
     } finally {
       setBusy(false);
     }
   }
 
-  async function receiveFile(): Promise<void> {
-    const code = receiveCode.trim().toUpperCase();
-    if (!code) {
-      toast.error("Enter a share code.");
-      return;
-    }
-
-    setBusy(true);
-    setProgress(0);
-
-    try {
-      setStatus("Loading manifest");
-      const manifestResponse = await fetch(`/api/receive/${encodeURIComponent(code)}`);
-      const manifest = (await manifestResponse.json()) as ReceiveManifest | { error: string };
-      if (!manifestResponse.ok || "error" in manifest) {
-        throw new Error("error" in manifest ? manifest.error : "Unable to load share");
-      }
-
-      const target = manifest.files[0];
-      if (!target) {
-        throw new Error("No files found for this code");
-      }
-
-      const key = await keyFromCode(code, target.salt);
-      const parts: Blob[] = [];
-      for (const chunk of target.chunks) {
-        setStatus(`Downloading chunk ${chunk.idx + 1} of ${target.chunkCount}`);
-        
-        let downloadResponse = await fetch(chunk.getUrl);
-        let retries = 0;
-        
-        // If R2 returns 404, the sender hasn't uploaded this chunk yet.
-        // We poll every 1 second until it's available (up to ~30 mins).
-        while (downloadResponse.status === 404 && retries < 1800) {
-          await new Promise(r => setTimeout(r, 1000));
-          downloadResponse = await fetch(chunk.getUrl);
-          retries++;
-        }
-
-        if (!downloadResponse.ok) {
-          throw new Error(`R2 download failed for chunk ${chunk.idx + 1}`);
-        }
-        setStatus(`Decrypting chunk ${chunk.idx + 1} of ${target.chunkCount}`);
-        parts.push(await decryptChunk(await downloadResponse.blob(), chunk.idx, key));
-        setProgress((chunk.idx + 1) / target.chunkCount);
-      }
-
-      const blob = new Blob(parts);
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = target.filename;
-      anchor.click();
-      URL.revokeObjectURL(url);
-      toast.success("Download complete");
-      setStatus("");
-    } catch (caught) {
-      toast.error(caught instanceof Error ? caught.message : "Download failed");
-      setStatus("");
-    } finally {
-      setBusy(false);
-    }
+  async function copyCode() {
+    await navigator.clipboard.writeText(shareCode);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   }
+
+  // 3D tilt handlers
+  function handleTilt(e: React.MouseEvent<HTMLDivElement>) {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = (e.clientX - rect.left) / rect.width - 0.5;
+    const y = (e.clientY - rect.top) / rect.height - 0.5;
+    e.currentTarget.style.transform = `perspective(800px) rotateY(${x * 6}deg) rotateX(${-y * 6}deg) translateY(-6px)`;
+  }
+  function handleTiltLeave(e: React.MouseEvent<HTMLDivElement>) {
+    e.currentTarget.style.transform = "";
+  }
+
+  const steps = [
+    { num: "01", title: "Drop your file", desc: "Drag and drop any file, or browse. Any size up to 1 GiB.", pct: 25 },
+    { num: "02", title: "We encrypt it", desc: "AES-256-GCM encryption happens in your browser. Zero-knowledge.", pct: 50 },
+    { num: "03", title: "Get your code", desc: "A unique share code is generated. The code IS the decryption key.", pct: 75 },
+    { num: "04", title: "Share anywhere", desc: "Send the code via any channel. Recipient enters it to download.", pct: 100 },
+  ];
+
+  const marqueeItems = [
+    "End-to-end encrypted",
+    "No file size limits",
+    "Zero-knowledge",
+    "Self-destructing",
+    "Global CDN",
+    "Chunked uploads",
+    "No account needed",
+    "AES-256-GCM",
+  ];
 
   return (
-    <main className="shell">
-      <header className="topbar">
-        <div className="brand">
-          <span className="brand-mark">
-            <Shield size={18} />
-          </span>
-          <span>Shareapp</span>
-        </div>
-        <div className="auth">
-          <SignedOut>
-            <SignInButton mode="modal">
-              <button className="secondary">Sign in</button>
-            </SignInButton>
-          </SignedOut>
-          <SignedIn>
-            <UserButton />
-          </SignedIn>
-        </div>
-      </header>
+    <>
+      <Nav />
 
-      <section className="workspace">
-        <div className="stage">
-          <div className="headline">
-            <h1>Encrypted file transfer by code.</h1>
-            <p>
-              Send up to 1 GiB through Cloudflare R2. Files are encrypted in the browser before upload and unlocked by
-              the receiver&apos;s share code.
+      {/* ─── HERO ─── */}
+      <section className="relative z-10 min-h-screen flex items-center pt-24 pb-20 px-6 md:px-14">
+        <div className="max-w-7xl mx-auto w-full grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
+          {/* Left column */}
+          <div className="flex flex-col gap-6" style={{ animation: "fadeUp 0.8s ease both" }}>
+            <h1 className="text-5xl md:text-7xl font-extrabold leading-[1.05] tracking-tight">
+              Share files<br />
+              <em className="italic font-light">like a </em><span className="grad-text">flock.</span>
+            </h1>
+
+            <p className="text-base md:text-lg text-[var(--muted)] max-w-md leading-relaxed">
+              Drop your files. Get a code instantly. End-to-end encrypted, no sign-up required. Just share and fly.
             </p>
-          </div>
-          <div className="rail" aria-label="Transfer properties">
-            <div className="rail-item">
-              <strong>01</strong>
-              <span>Complete Privacy. Your files are locked on your device before they ever touch the internet.</span>
-            </div>
-            <div className="rail-item">
-              <strong>02</strong>
-              <span>Lightning Fast. Enjoy seamless, high-speed transfers without any restrictive limits.</span>
-            </div>
-            <div className="rail-item">
-              <strong>03</strong>
-              <span>Easy Sharing. Just share your unique code with the recipient to unlock the file instantly.</span>
-            </div>
-          </div>
-        </div>
 
-        <div className="panel">
-          <div className="tabs" role="tablist" aria-label="Transfer mode">
-            <button className={`tab ${mode === "send" ? "active" : ""}`} onClick={() => setMode("send")}>
-              Send
-            </button>
-            <button className={`tab ${mode === "receive" ? "active" : ""}`} onClick={() => setMode("receive")}>
-              Receive
-            </button>
-          </div>
-
-          {mode === "send" ? (
-            <div className="form">
-              <SignedOut>
-                <div className="status">Sign in to create a share code and upload encrypted chunks.</div>
-              </SignedOut>
+            <div className="flex items-center gap-3 mt-2">
               <SignedIn>
-                <label className="label dropzone">
-                  <span className="dropzone-text">Click to choose a file...</span>
-                  <input
-                    className="file-input hidden"
-                    type="file"
-                    disabled={busy}
-                    onChange={(event) => setFile(event.target.files?.[0] ?? null)}
-                  />
-                </label>
-                {file ? (
-                  <div className="status">
-                    {file.name}
-                    <br />
-                    <span className="muted">{Math.ceil(file.size / 1024 / 1024)} MiB selected</span>
-                  </div>
-                ) : null}
-                <button className="primary" disabled={busy || !file} onClick={sendFile}>
-                  {busy ? <Loader2 size={18} className="animate-spin" /> : <ArrowUpFromLine size={18} />}
-                  Send file
+                <button
+                  className="bg-[var(--grad)] text-white px-7 py-3.5 rounded-full text-base font-semibold hover:shadow-[0_20px_60px_rgba(124,111,255,0.4)] hover:-translate-y-0.5 transition-all disabled:opacity-50"
+                  onClick={file ? sendFile : () => fileInputRef.current?.click()}
+                  disabled={busy || status === "working"}
+                >
+                  {status === "working" ? "Uploading..." : "Upload Files"}
                 </button>
-                {shareCode ? (
-                  <div className="code">
-                    <div>
-                      <span className="muted">Share code</span>
-                      <br />
-                      <strong>{shareCode}</strong>
+              </SignedIn>
+              <SignedOut>
+                <SignInButton mode="modal">
+                  <button className="bg-[var(--grad)] text-white px-7 py-3.5 rounded-full text-base font-semibold hover:shadow-[0_20px_60px_rgba(124,111,255,0.4)] hover:-translate-y-0.5 transition-all">
+                    Upload Files
+                  </button>
+                </SignInButton>
+              </SignedOut>
+            </div>
+          </div>
+
+          {/* Right column - Upload Card */}
+          <div
+            className="relative rounded-3xl border border-[var(--border)] bg-[rgba(255,255,255,0.08)] backdrop-blur-2xl p-1 shadow-2xl"
+            style={{ animation: "fadeUp 0.8s 0.2s ease both" }}
+          >
+            {/* macOS dots */}
+            <div className="flex items-center gap-2 px-5 py-3 border-b border-[var(--border)] animate-[float_6s_ease-in-out_infinite]">
+              <span className="w-3 h-3 rounded-full bg-[#ff5f57]" />
+              <span className="w-3 h-3 rounded-full bg-[#febc2e]" />
+              <span className="w-3 h-3 rounded-full bg-[#28c840]" />
+              <span className="ml-4 text-xs text-[var(--muted)]">flock — upload</span>
+            </div>
+
+            {/* Drop zone */}
+            <div
+              className={`drop-zone m-4 rounded-2xl border-2 border-dashed p-10 transition-all text-center ${
+                dragOver
+                  ? "border-[var(--violet)] bg-[rgba(124,111,255,0.08)]"
+                  : "border-[rgba(255,255,255,0.1)] hover:border-[var(--violet)] hover:bg-[rgba(124,111,255,0.04)]"
+              }`}
+              onClick={() => fileInputRef.current?.click()}
+              onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+              onDragLeave={(e) => { e.preventDefault(); setDragOver(false); }}
+              onDrop={(e) => { e.preventDefault(); setDragOver(false); selectFile(e.dataTransfer.files[0]); }}
+            >
+              <input
+                ref={fileInputRef}
+                type="file"
+                className="sr-only"
+                onChange={(e) => selectFile(e.target.files?.[0] ?? null)}
+                disabled={busy}
+              />
+
+              {/* Idle state */}
+              {status === "idle" && !file && (
+                <div className="flex flex-col items-center gap-3">
+                  <div className="w-16 h-16 rounded-2xl bg-[rgba(124,111,255,0.12)] flex items-center justify-center text-3xl mb-2">
+                    🕊
+                  </div>
+                  <p className="text-lg font-semibold text-[var(--text)]">Drop your files anywhere</p>
+                  <p className="text-sm text-[var(--muted)]">or <span className="text-[var(--violet2)] font-medium">browse</span> to upload</p>
+                  <div className="flex gap-2 mt-3">
+                    {[".zip", ".mp4", ".pdf", ".png", ".any"].map((t) => (
+                      <span key={t} className="text-[10px] px-2 py-1 rounded-full bg-[rgba(255,255,255,0.05)] text-[var(--muted)] border border-[var(--border)]">
+                        {t}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* File selected, idle */}
+              {status === "idle" && file && (
+                <div className="flex flex-col items-center gap-4">
+                  <div className="flex items-center gap-3 text-left w-full">
+                    <div className="w-10 h-10 rounded-xl bg-[rgba(124,111,255,0.15)] flex items-center justify-center text-lg shrink-0">📄</div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium truncate">{file.name}</p>
+                      <p className="text-xs text-[var(--muted)]">{formatBytes(file.size)}</p>
                     </div>
-                    <button className={`secondary ${copied ? 'copied' : ''}`} onClick={() => {
-                      navigator.clipboard.writeText(shareCode);
-                      toast.success("Code copied to clipboard!");
-                      setCopied(true);
-                      setTimeout(() => setCopied(false), 2000);
-                    }} title="Copy code">
-                      {copied ? <Check size={18} className="animate-pop" /> : <Copy size={18} />}
+                  </div>
+                  <button
+                    className="w-full py-3 rounded-xl bg-[var(--grad)] text-white text-sm font-bold hover:shadow-[0_12px_40px_rgba(124,111,255,0.4)] hover:-translate-y-0.5 transition-all disabled:opacity-50"
+                    onClick={(e) => { e.stopPropagation(); sendFile(); }}
+                    disabled={busy}
+                  >
+                    Upload & Get Code
+                  </button>
+                </div>
+              )}
+
+              {/* Working state */}
+              {status === "working" && (
+                <div className="flex items-center gap-3 text-left">
+                  <div className="w-10 h-10 rounded-xl bg-[rgba(124,111,255,0.15)] flex items-center justify-center text-lg shrink-0 animate-[enc-pulse_2s_infinite]">🔐</div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium truncate">{file?.name}</p>
+                    <p className="text-xs text-[var(--muted)]">{statusMsg}</p>
+                    <div className="h-1 mt-2 rounded-full bg-[rgba(255,255,255,0.08)] overflow-hidden">
+                      <div
+                        className="h-full rounded-full bg-[var(--grad)] transition-all duration-300"
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                    <p className="text-[10px] text-[var(--muted)] mt-1">{pct}%</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Success state */}
+              {status === "success" && (
+                <div className="flex flex-col items-center gap-4">
+                  <div className="w-16 h-16 rounded-full bg-[rgba(40,200,64,0.15)] border-2 border-[rgba(40,200,64,0.4)] flex items-center justify-center text-2xl text-green-400">
+                    ✓
+                  </div>
+                  <p className="text-lg font-bold">Your share code</p>
+                  <div className="flex items-center w-full rounded-xl bg-[rgba(124,111,255,0.08)] border border-[rgba(124,111,255,0.25)] overflow-hidden">
+                    <span className="flex-1 px-4 py-3 text-sm font-mono text-[var(--violet2)] tracking-wider">{shareCode}</span>
+                    <button
+                      className="px-4 py-3 bg-[var(--grad)] text-white text-xs font-semibold hover:opacity-80 transition-opacity"
+                      onClick={(e) => { e.stopPropagation(); copyCode(); }}
+                    >
+                      {copied ? "Copied!" : "Copy"}
                     </button>
                   </div>
-                ) : null}
-              </SignedIn>
-            </div>
-          ) : (
-            <div className="form">
-              <label className="label">
-                Share code
-                <input
-                  className="input"
-                  value={receiveCode}
-                  disabled={busy}
-                  placeholder="ABCD234XYZ"
-                  onChange={(event) => setReceiveCode(event.target.value.toUpperCase())}
-                />
-              </label>
-              <button className="primary" disabled={busy} onClick={receiveFile}>
-                {busy ? <Loader2 size={18} className="animate-spin" /> : <ArrowDownToLine size={18} />}
-                Download file
-              </button>
-            </div>
-          )}
+                  <div className="flex gap-3 text-[10px] text-[var(--muted)]">
+                    <span>🔒 256-bit encrypted</span>
+                    <span>⏱ Auto-expires</span>
+                  </div>
+                  <button
+                    className="mt-2 text-sm text-[var(--violet2)] hover:text-[var(--text)] transition-colors"
+                    onClick={(e) => { e.stopPropagation(); setFile(null); setStatus("idle"); setShareCode(""); setProgress(0); }}
+                  >
+                    Upload another →
+                  </button>
+                </div>
+              )}
 
-          {busy && status ? (
-            <div className="form" style={{ marginTop: 28 }}>
-              <div className="progress" aria-label={progressLabel}>
-                <span style={{ "--progress": progressLabel } as React.CSSProperties} />
-              </div>
-              <div className="status" style={{ border: 'none', background: 'transparent', padding: 0, minHeight: 'auto', textAlign: 'center', opacity: 0.8 }}>
-                {status}
-                <br />
-                <span className="muted">{progressLabel}</span>
+              {/* Error state */}
+              {status === "error" && (
+                <div className="flex flex-col items-center gap-3">
+                  <p className="text-sm text-red-400">{statusMsg}</p>
+                  <button
+                    className="text-sm text-[var(--violet2)] hover:text-[var(--text)] transition-colors"
+                    onClick={(e) => { e.stopPropagation(); setStatus("idle"); }}
+                  >
+                    Try again
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Receive file */}
+            <div className="px-5 py-4 border-t border-[var(--border)]">
+              <p className="text-xs text-[var(--muted)] mb-2 text-center">Have a code? Enter it to download.</p>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="Enter share code"
+                  className="flex-1 px-3 py-2.5 rounded-xl bg-[rgba(124,111,255,0.06)] border border-[rgba(124,111,255,0.2)] text-sm font-semibold text-center uppercase tracking-wider text-[var(--text)] placeholder:text-[var(--muted)] placeholder:normal-case placeholder:tracking-normal placeholder:font-normal focus:border-[var(--violet)] transition-colors"
+                  maxLength={12}
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+                <a
+                  href="/receive"
+                  className="px-4 py-2.5 rounded-xl bg-[var(--grad)] text-white text-xs font-bold flex items-center hover:opacity-85 transition-opacity shrink-0"
+                >
+                  Receive
+                </a>
               </div>
             </div>
-          ) : null}
+          </div>
         </div>
       </section>
-    </main>
+
+      {/* ─── MARQUEE ─── */}
+      <section className="relative z-10 py-10 border-y border-[var(--border)] overflow-hidden">
+        <div className="flex animate-[marquee_30s_linear_infinite]" style={{ width: "max-content" }}>
+          {[...marqueeItems, ...marqueeItems].map((item, i) => (
+            <span key={i} className="mx-8 text-sm font-medium text-[var(--muted)] whitespace-nowrap flex items-center gap-2">
+              <span className="w-1 h-1 rounded-full bg-[var(--violet)]" />
+              {item}
+            </span>
+          ))}
+        </div>
+      </section>
+
+      {/* ─── FEATURES BENTO ─── */}
+      <section id="features" className="relative z-10 py-28 px-6 md:px-14 max-w-7xl mx-auto">
+        <div className="reveal mb-16">
+          <p className="text-xs font-semibold tracking-[0.15em] uppercase text-[var(--violet2)] mb-4">Why choose flock</p>
+          <h2 className="text-4xl md:text-5xl font-extrabold tracking-tight mb-5">
+            Everything you need.<br /><em className="italic font-light">Nothing you don&apos;t.</em>
+          </h2>
+          <p className="text-base text-[var(--muted)] max-w-md">
+            Forget clunky UIs and paywalls. Flock is frictionless, fast, and privacy-first.
+          </p>
+        </div>
+
+        {/* Bento Grid - 12 columns */}
+        <div className="reveal grid grid-cols-12 gap-5">
+
+          {/* Card 1 - Speed (col-span-8) */}
+          <div
+            className="col-span-12 md:col-span-8 relative group rounded-3xl border border-[var(--border)] bg-[var(--glass)] backdrop-blur-sm p-8 transition-all duration-300 overflow-hidden"
+            onMouseMove={handleTilt}
+            onMouseLeave={handleTiltLeave}
+          >
+            <div className="absolute inset-0 rounded-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none bg-[radial-gradient(circle_at_50%_50%,rgba(124,111,255,0.08),transparent_70%)]" />
+            <p className="text-[11px] font-bold tracking-[0.1em] uppercase text-[var(--violet2)] mb-2">Performance</p>
+            <h3 className="text-lg font-bold mb-1 tracking-tight">Uploads that don&apos;t make you wait.</h3>
+            <p className="text-sm text-[var(--muted)] mb-6">Multi-threaded chunked uploads hit speeds your ISP can handle. We won&apos;t be the bottleneck.</p>
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center gap-3">
+                <span className="text-xs text-[var(--violet2)] font-bold w-14 shrink-0">Flock</span>
+                <div className="flex-1 h-2 rounded-full bg-[rgba(255,255,255,0.06)] overflow-hidden">
+                  <div className="h-full rounded-full" style={{ width: "92%", background: "linear-gradient(90deg, #7c6fff, #a78bfa, #00d9ff)" }} />
+                </div>
+                <span className="text-xs font-bold text-[var(--violet2)] w-16 text-right">920 MB/s</span>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="text-xs text-[var(--muted)] w-14 shrink-0">Others</span>
+                <div className="flex-1 h-2 rounded-full bg-[rgba(255,255,255,0.06)] overflow-hidden">
+                  <div className="h-full rounded-full" style={{ width: "48%", background: "var(--rose)" }} />
+                </div>
+                <span className="text-xs font-bold text-[var(--rose)] w-16 text-right">480 MB/s</span>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="text-xs text-[var(--muted)] w-14 shrink-0">Email</span>
+                <div className="flex-1 h-2 rounded-full bg-[rgba(255,255,255,0.06)] overflow-hidden">
+                  <div className="h-full rounded-full" style={{ width: "31%", background: "#f59e0b" }} />
+                </div>
+                <span className="text-xs font-bold text-amber-400 w-16 text-right">25 MB</span>
+              </div>
+              <p className="text-[11px] text-[var(--muted)] mt-3">Measured on 1Gbps connection, average of 1000 transfers</p>
+            </div>
+          </div>
+
+          {/* Card 2 - Encryption (col-span-4, row-span-2) */}
+          <div
+            className="col-span-12 md:col-span-4 md:row-span-2 relative group rounded-3xl border border-[var(--border)] bg-[var(--glass)] backdrop-blur-sm p-8 transition-all duration-300 overflow-hidden"
+            onMouseMove={handleTilt}
+            onMouseLeave={handleTiltLeave}
+          >
+            <div className="absolute inset-0 rounded-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none bg-[radial-gradient(circle_at_50%_50%,rgba(0,217,255,0.08),transparent_70%)]" />
+            <h3 className="text-base font-bold mb-1 tracking-tight">End-to-end encrypted</h3>
+            <p className="text-sm text-[var(--muted)] mb-6">Zero-knowledge architecture. Even we can&apos;t read your files.</p>
+            <div className="flex flex-col gap-4">
+              <div className="flex items-center gap-3 p-3 rounded-xl bg-[rgba(0,217,255,0.05)] border border-[rgba(0,217,255,0.15)] animate-[pulse_4s_infinite]">
+                <span className="text-lg">📁</span>
+                <div>
+                  <p className="text-xs font-bold">RAW</p>
+                  <p className="text-[10px] text-[var(--muted)]">Your original file</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 p-3 rounded-xl bg-[rgba(0,217,255,0.05)] border border-[rgba(0,217,255,0.15)] animate-[pulse_4s_0.5s_infinite]">
+                <span className="text-lg">🔐</span>
+                <div>
+                  <p className="text-xs font-bold">LOCAL</p>
+                  <p className="text-[10px] text-[var(--muted)]">Encrypted in browser</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 p-3 rounded-xl bg-[rgba(0,217,255,0.05)] border border-[rgba(0,217,255,0.15)] animate-[pulse_4s_1s_infinite]">
+                <span className="text-lg">☁️</span>
+                <div>
+                  <p className="text-xs font-bold">SAFE</p>
+                  <p className="text-[10px] text-[var(--muted)]">Stored encrypted</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Card 5 - Zero friction (col-span-6) */}
+          <div
+            className="col-span-12 md:col-span-6 relative group rounded-3xl border border-[var(--border)] bg-[var(--glass)] backdrop-blur-sm p-8 transition-all duration-300 overflow-hidden"
+            onMouseMove={handleTilt}
+            onMouseLeave={handleTiltLeave}
+          >
+            <div className="absolute inset-0 rounded-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none bg-[radial-gradient(circle_at_50%_50%,rgba(255,107,157,0.08),transparent_70%)]" />
+            <div className="flex items-center justify-between gap-8 h-full">
+              <div>
+                <p className="text-[11px] font-bold tracking-[0.1em] uppercase text-[var(--rose)] mb-2">Zero friction</p>
+                <h3 className="text-lg font-bold mb-2 tracking-tight leading-tight">No account.<br/>No waiting.<br/>Just share.</h3>
+                <p className="text-sm text-[var(--muted)]">Open tab → drop file → copy link. Done in under 10 seconds.</p>
+              </div>
+              <div className="flex flex-col items-center gap-2 shrink-0">
+                <div className="w-[72px] h-[72px] rounded-full bg-gradient-to-br from-[rgba(255,107,157,0.2)] to-[rgba(124,111,255,0.2)] border-2 border-[rgba(255,107,157,0.3)] flex items-center justify-center text-3xl animate-[float_4s_ease-in-out_infinite] shadow-[0_0_40px_rgba(255,107,157,0.15)]">
+                  🕊
+                </div>
+                <span className="text-[11px] font-bold text-[var(--muted)] tracking-widest uppercase">10 sec</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Card 6 - CDN (col-span-6) */}
+          <div
+            className="col-span-12 md:col-span-6 relative group rounded-3xl border border-[var(--border)] bg-[var(--glass)] backdrop-blur-sm p-8 transition-all duration-300 overflow-hidden"
+            onMouseMove={handleTilt}
+            onMouseLeave={handleTiltLeave}
+          >
+            <div className="absolute inset-0 rounded-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none bg-[radial-gradient(circle_at_50%_50%,rgba(0,217,255,0.08),transparent_70%)]" />
+            <h3 className="text-base font-bold mb-1 tracking-tight">Global CDN delivery</h3>
+            <p className="text-sm text-[var(--muted)] mb-4">Files delivered from edge nodes worldwide. Blazing fast downloads everywhere.</p>
+            <div className="text-4xl font-black grad-text">120+ edge nodes</div>
+          </div>
+
+        </div>
+      </section>
+
+      {/* ─── HOW IT WORKS ─── */}
+      <section id="how" className="relative z-10 py-28 px-6 md:px-14 max-w-7xl mx-auto">
+        <div className="reveal text-center mb-16">
+          <p className="text-xs font-semibold tracking-[0.15em] uppercase text-[var(--violet2)] mb-4">How it works</p>
+          <h2 className="text-4xl md:text-5xl font-extrabold tracking-tight">Four steps to <em className="italic font-light">total</em> freedom.</h2>
+        </div>
+        <div className="reveal grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8 relative">
+          {/* Connecting line */}
+          <div className="hidden lg:block absolute top-8 left-[12%] right-[12%] h-px bg-gradient-to-r from-transparent via-[var(--violet)] to-transparent" />
+          {steps.map((s, i) => (
+            <div key={i} className="text-center relative z-10">
+              <div className="w-16 h-16 rounded-full border border-[rgba(124,111,255,0.3)] bg-[var(--bg2)] flex items-center justify-center mx-auto mb-5 relative">
+                {/* Conic gradient progress ring */}
+                <div
+                  className="absolute inset-[-3px] rounded-full"
+                  style={{
+                    background: `conic-gradient(var(--violet) ${s.pct}%, transparent ${s.pct}%)`,
+                    mask: "radial-gradient(farthest-side, transparent calc(100% - 3px), #fff calc(100% - 3px))",
+                    WebkitMask: "radial-gradient(farthest-side, transparent calc(100% - 3px), #fff calc(100% - 3px))",
+                  }}
+                />
+                <span className="text-xl font-extrabold grad-text">{s.num}</span>
+              </div>
+              <h4 className="text-sm font-bold mb-2">{s.title}</h4>
+              <p className="text-xs text-[var(--muted)] leading-relaxed">{s.desc}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* ─── PRICING ─── */}
+      <section id="pricing" className="relative z-10 py-28 px-6 md:px-14 max-w-5xl mx-auto">
+        <div className="reveal text-center mb-16">
+          <p className="text-xs font-semibold tracking-[0.15em] uppercase text-[var(--violet2)] mb-4">Pricing</p>
+          <h2 className="text-4xl md:text-5xl font-extrabold tracking-tight mb-5">Simple, honest pricing</h2>
+          <p className="text-base text-[var(--muted)]">Start free. Upgrade when you need more.</p>
+        </div>
+        <div className="reveal grid grid-cols-1 md:grid-cols-3 gap-6">
+          {/* Free */}
+          <div
+            className="price-card rounded-3xl border border-[var(--border)] bg-[var(--glass)] backdrop-blur-sm p-8 transition-all duration-300"
+            onMouseMove={handleTilt}
+            onMouseLeave={handleTiltLeave}
+          >
+            <p className="text-xs font-semibold tracking-widest uppercase text-[var(--muted)] mb-5">Free</p>
+            <div className="text-5xl font-extrabold tracking-tight mb-1">$0</div>
+            <p className="text-sm text-[var(--muted)] mb-7">forever, no card needed</p>
+            <div className="h-px bg-[var(--border)] mb-7" />
+            <div className="flex flex-col gap-3 mb-8 text-sm text-[var(--muted)]">
+              <span>✦ Up to 2 GB per file</span>
+              <span>✦ 7-day expiry</span>
+              <span>✦ 10 transfers/month</span>
+              <span>✦ Basic encryption</span>
+            </div>
+            <button className="w-full py-3 rounded-xl border border-[rgba(124,111,255,0.3)] text-sm font-semibold hover:bg-[rgba(124,111,255,0.1)] transition-colors">
+              Get started free
+            </button>
+          </div>
+
+          {/* Pro - Featured */}
+          <div className="relative">
+            {/* Radial glow blob behind Pro card */}
+            <div className="absolute -inset-4 rounded-3xl bg-[radial-gradient(circle,rgba(124,111,255,0.2),transparent_70%)] blur-xl pointer-events-none" />
+            <div
+              className="price-card relative rounded-3xl bg-[var(--grad)] p-8 transition-all duration-300 scale-[1.03]"
+              onMouseMove={handleTilt}
+              onMouseLeave={handleTiltLeave}
+            >
+              {/* Most Popular badge */}
+              <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-4 py-1 rounded-full bg-white text-[var(--violet)] text-[10px] font-bold uppercase tracking-wider shadow-lg">
+                Most Popular
+              </div>
+              <p className="text-xs font-semibold tracking-widest uppercase text-white/70 mb-5">Pro</p>
+              <div className="text-5xl font-extrabold tracking-tight text-white mb-1">$8</div>
+              <p className="text-sm text-white/60 mb-7">per month, billed monthly</p>
+              <div className="h-px bg-white/20 mb-7" />
+              <div className="flex flex-col gap-3 mb-8 text-sm text-white/85">
+                <span>✦ Unlimited file size</span>
+                <span>✦ 30-day expiry</span>
+                <span>✦ Unlimited transfers</span>
+                <span>✦ E2E encryption</span>
+                <span>✦ Password protection</span>
+                <span>✦ Download analytics</span>
+              </div>
+              <button className="w-full py-3 rounded-xl bg-white text-[var(--violet)] text-sm font-bold hover:opacity-90 transition-opacity">
+                Start Pro trial
+              </button>
+            </div>
+          </div>
+
+          {/* Team */}
+          <div
+            className="price-card rounded-3xl border border-[var(--border)] bg-[var(--glass)] backdrop-blur-sm p-8 transition-all duration-300"
+            onMouseMove={handleTilt}
+            onMouseLeave={handleTiltLeave}
+          >
+            <p className="text-xs font-semibold tracking-widest uppercase text-[var(--muted)] mb-5">Team</p>
+            <div className="text-5xl font-extrabold tracking-tight mb-1">$24</div>
+            <p className="text-sm text-[var(--muted)] mb-7">per month, up to 10 users</p>
+            <div className="h-px bg-[var(--border)] mb-7" />
+            <div className="flex flex-col gap-3 mb-8 text-sm text-[var(--muted)]">
+              <span>✦ Everything in Pro</span>
+              <span>✦ Team workspace</span>
+              <span>✦ Custom domain</span>
+              <span>✦ SSO & audit logs</span>
+            </div>
+            <button className="w-full py-3 rounded-xl border border-[rgba(124,111,255,0.3)] text-sm font-semibold hover:bg-[rgba(124,111,255,0.1)] transition-colors">
+              Contact sales
+            </button>
+          </div>
+        </div>
+      </section>
+
+      {/* ─── CTA STRIP ─── */}
+      <section className="relative z-10 mx-6 md:mx-14 mb-24">
+        <div className="reveal rounded-3xl bg-gradient-to-br from-[rgba(124,111,255,0.15)] to-[rgba(0,217,255,0.1)] border border-[rgba(124,111,255,0.3)] p-10 md:p-16 flex flex-col md:flex-row items-center justify-between gap-10 overflow-hidden relative">
+          <div className="absolute -top-16 -right-10 w-72 h-72 rounded-full bg-[radial-gradient(circle,rgba(124,111,255,0.2),transparent_70%)] pointer-events-none" />
+          <h2 className="text-3xl md:text-4xl font-black tracking-tight leading-tight text-[var(--text)]">
+            Ready to fly?<br />
+            <span className="grad-text">Start sharing</span>{" "}
+            <em className="italic font-light">free.</em>
+          </h2>
+          <div className="flex flex-col items-center md:items-end gap-3 shrink-0">
+            <button
+              className="bg-white text-[var(--violet)] px-8 py-4 rounded-full text-base font-bold hover:shadow-[0_20px_60px_rgba(0,0,0,0.2)] hover:-translate-y-0.5 transition-all"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              Upload your first file
+            </button>
+            <span className="text-xs text-[var(--muted)]">No account needed · Takes 10 seconds</span>
+          </div>
+        </div>
+      </section>
+
+      {/* ─── FOOTER ─── */}
+      <footer className="relative z-10 border-t border-[var(--border)] px-6 md:px-14 py-16">
+        <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-4 gap-12 mb-12">
+          {/* Brand */}
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center gap-2 text-lg font-bold">
+              <span>🕊</span>
+              <span className="grad-text">flock</span>
+            </div>
+            <p className="text-sm text-[var(--muted)] leading-relaxed">
+              Share files freely. End-to-end encrypted, no sign-up required.
+            </p>
+          </div>
+
+          {/* Product */}
+          <div className="flex flex-col gap-3">
+            <p className="text-xs font-semibold tracking-widest uppercase text-[var(--muted)] mb-1">Product</p>
+            <a href="#pricing" className="text-sm text-[var(--muted)] hover:text-[var(--text)] transition-colors">Pricing</a>
+            <a href="#" className="text-sm text-[var(--muted)] hover:text-[var(--text)] transition-colors">Changelog</a>
+            <a href="#" className="text-sm text-[var(--muted)] hover:text-[var(--text)] transition-colors">Status</a>
+          </div>
+
+          {/* Developers */}
+          <div className="flex flex-col gap-3">
+            <p className="text-xs font-semibold tracking-widest uppercase text-[var(--muted)] mb-1">Developers</p>
+            <a href="https://github.com/SS-shareapp/test--name--shareapp-" target="_blank" rel="noopener noreferrer" className="text-sm text-[var(--muted)] hover:text-[var(--text)] transition-colors">Open source</a>
+          </div>
+
+          {/* Company */}
+          <div className="flex flex-col gap-3">
+            <p className="text-xs font-semibold tracking-widest uppercase text-[var(--muted)] mb-1">Company</p>
+            <a href="#" className="text-sm text-[var(--muted)] hover:text-[var(--text)] transition-colors">About</a>
+            <a href="#" className="text-sm text-[var(--muted)] hover:text-[var(--text)] transition-colors">Privacy</a>
+          </div>
+        </div>
+
+        {/* Bottom row */}
+        <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4 pt-8 border-t border-[var(--border)]">
+          <p className="text-xs text-[var(--muted)]">© 2025 Flock, Inc. All rights reserved.</p>
+          <p className="text-xs text-[var(--muted)]">Made by Siddhant & Sanman</p>
+          <div className="flex gap-6 text-xs text-[var(--muted)]">
+            <a href="#" className="hover:text-[var(--text)] transition-colors">Privacy Policy</a>
+            <a href="#" className="hover:text-[var(--text)] transition-colors">Cookie Policy</a>
+          </div>
+        </div>
+      </footer>
+    </>
   );
 }
