@@ -3,7 +3,7 @@
 import { SignedIn, SignedOut, SignInButton, useAuth } from "@clerk/nextjs";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { DEFAULT_CHUNK_SIZE, MAX_FILE_BYTES } from "@/lib/constants";
-import { encryptChunk, keyFromCode, randomSalt, sha256Hex } from "@/lib/browser-crypto";
+import { encryptChunk, decryptChunk, keyFromCode, randomSalt, sha256Hex } from "@/lib/browser-crypto";
 import { formatBytes } from "@/lib/utils";
 import Nav from "./components/Nav";
 
@@ -16,6 +16,7 @@ type CreateShareResponse = {
   expiresAt: string;
   chunks: UploadChunk[];
 };
+type ReceiveManifest = { code: string; files: Array<{ fileId: string; filename: string; sizeBytes: number; chunkSize: number; chunkCount: number; fileSha256: string; salt: string; completed: boolean; chunks: Array<{ idx: number; getUrl: string }>; }>; };
 
 export default function Home() {
   const { getToken } = useAuth();
@@ -29,6 +30,11 @@ export default function Home() {
   const [busy, setBusy] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [receiveCode, setReceiveCode] = useState("");
+  const [rcvStatus, setRcvStatus] = useState<"idle" | "working" | "success" | "error">("idle");
+  const [rcvMsg, setRcvMsg] = useState("");
+  const [rcvProgress, setRcvProgress] = useState(0);
+  const [rcvFile, setRcvFile] = useState<{ name: string; size: number; url: string } | null>(null);
 
   const pct = useMemo(() => Math.round(progress * 100), [progress]);
 
@@ -125,6 +131,37 @@ export default function Home() {
     await navigator.clipboard.writeText(shareCode);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  }
+
+  async function receiveFile(): Promise<void> {
+    const code = receiveCode.trim().toUpperCase();
+    if (!code) return;
+    setRcvStatus("working"); setRcvProgress(0); setRcvFile(null);
+    try {
+      setRcvMsg("Looking up code...");
+      const res = await fetch(`/api/receive/${encodeURIComponent(code)}`);
+      const data = (await res.json()) as ReceiveManifest | { error: string };
+      if (!res.ok || "error" in data) throw new Error("error" in data ? data.error : "Not found");
+      const target = data.files[0];
+      if (!target) throw new Error("No files found");
+      if (!target.completed) throw new Error("Upload not finished yet");
+      const key = await keyFromCode(code, target.salt);
+      const parts: Blob[] = [];
+      for (const chunk of target.chunks) {
+        setRcvMsg(`Downloading ${chunk.idx + 1}/${target.chunkCount}`);
+        const dl = await fetch(chunk.getUrl);
+        if (!dl.ok) throw new Error(`Chunk ${chunk.idx + 1} failed`);
+        parts.push(await decryptChunk(await dl.blob(), chunk.idx, key));
+        setRcvProgress((chunk.idx + 1) / target.chunkCount);
+      }
+      setRcvFile({ name: target.filename, size: target.sizeBytes, url: URL.createObjectURL(new Blob(parts)) });
+      setRcvStatus("success");
+    } catch (e) { setRcvStatus("error"); setRcvMsg(e instanceof Error ? e.message : "Download failed"); }
+  }
+
+  function downloadRcvFile() {
+    if (!rcvFile) return;
+    const a = document.createElement("a"); a.href = rcvFile.url; a.download = rcvFile.name; a.click();
   }
 
   // 3D tilt handlers
@@ -326,25 +363,60 @@ export default function Home() {
               )}
             </div>
 
-            {/* Receive file */}
+            {/* Receive file inline */}
             <div className="px-5 py-4 border-t border-[var(--border)]">
-              <p className="text-xs text-[var(--muted)] mb-2 text-center">Have a code? Enter it to download.</p>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  placeholder="Enter share code"
-                  className="flex-1 px-3 py-2.5 rounded-xl bg-[rgba(124,111,255,0.06)] border border-[rgba(124,111,255,0.2)] text-sm font-semibold text-center uppercase tracking-wider text-[var(--text)] placeholder:text-[var(--muted)] placeholder:normal-case placeholder:tracking-normal placeholder:font-normal focus:border-[var(--violet)] transition-colors"
-                  maxLength={12}
-                  autoComplete="off"
-                  spellCheck={false}
-                />
-                <a
-                  href="/receive"
-                  className="px-4 py-2.5 rounded-xl bg-[var(--grad)] text-white text-xs font-bold flex items-center hover:opacity-85 transition-opacity shrink-0"
-                >
-                  Receive
-                </a>
-              </div>
+              {rcvStatus === "idle" && (
+                <>
+                  <p className="text-xs text-[var(--muted)] mb-2 text-center">Have a code? Enter it to download.</p>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      placeholder="Enter share code"
+                      value={receiveCode}
+                      onChange={(e) => setReceiveCode(e.target.value.toUpperCase())}
+                      className="flex-1 px-3 py-2.5 rounded-xl bg-[rgba(124,111,255,0.06)] border border-[rgba(124,111,255,0.2)] text-sm font-semibold text-center uppercase tracking-wider text-[var(--text)] placeholder:text-[var(--muted)] placeholder:normal-case placeholder:tracking-normal placeholder:font-normal focus:border-[var(--violet)] transition-colors"
+                      maxLength={12}
+                      autoComplete="off"
+                      spellCheck={false}
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                    <button
+                      onClick={(e) => { e.stopPropagation(); receiveFile(); }}
+                      disabled={!receiveCode.trim()}
+                      className="px-4 py-2.5 rounded-xl bg-[var(--grad)] text-white text-xs font-bold hover:opacity-85 transition-opacity shrink-0 disabled:opacity-40"
+                    >
+                      Receive
+                    </button>
+                  </div>
+                </>
+              )}
+              {rcvStatus === "working" && (
+                <div onClick={(e) => e.stopPropagation()}>
+                  <p className="text-xs text-[var(--muted)] mb-2 text-center">{rcvMsg}</p>
+                  <div className="h-1.5 rounded-full bg-[rgba(255,255,255,0.08)] overflow-hidden">
+                    <div className="h-full rounded-full transition-all duration-300" style={{ width: `${Math.round(rcvProgress * 100)}%`, background: "linear-gradient(90deg,#7c6fff,#a78bfa,#00d9ff)" }} />
+                  </div>
+                </div>
+              )}
+              {rcvStatus === "success" && rcvFile && (
+                <div className="flex flex-col gap-2" onClick={(e) => e.stopPropagation()}>
+                  <div className="flex items-center gap-3 p-2 rounded-xl bg-[rgba(16,185,129,0.08)] border border-[rgba(16,185,129,0.2)]">
+                    <span className="text-lg">📄</span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-semibold truncate">{rcvFile.name}</p>
+                      <p className="text-[10px] text-[var(--muted)]">{formatBytes(rcvFile.size)}</p>
+                    </div>
+                    <button onClick={downloadRcvFile} className="px-3 py-1.5 rounded-lg bg-[var(--grad)] text-white text-[10px] font-bold shrink-0">Save</button>
+                  </div>
+                  <button onClick={() => { setRcvStatus("idle"); setReceiveCode(""); setRcvFile(null); }} className="text-[10px] text-[var(--muted)] text-center">Receive another</button>
+                </div>
+              )}
+              {rcvStatus === "error" && (
+                <div className="text-center" onClick={(e) => e.stopPropagation()}>
+                  <p className="text-xs text-red-400 mb-1">{rcvMsg}</p>
+                  <button onClick={() => setRcvStatus("idle")} className="text-[10px] text-[var(--muted)]">Try again</button>
+                </div>
+              )}
             </div>
           </div>
         </div>
