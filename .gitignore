@@ -3,10 +3,11 @@ node_modules/
 out/
 dist/
 build/
+*.tsbuildinfo
 
 .env
 .env.local
 .env.*.local
-
+.commandcode
 *.log
 .DS_Store

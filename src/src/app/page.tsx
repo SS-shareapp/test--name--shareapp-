@@ -16,10 +16,9 @@ type CreateShareResponse = {
   expiresAt: string;
   chunks: UploadChunk[];
 };
-type ReceiveManifest = { code: string; files: Array<{ fileId: string; filename: string; sizeBytes: number; chunkSize: number; chunkCount: number; fileSha256: string; salt: string; completed: boolean; chunks: Array<{ idx: number; getUrl: string }>; }>; };
 
 export default function Home() {
-  const { getToken } = useAuth();
+  const { getToken, isSignedIn } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [file, setFile] = useState<File | null>(null);
@@ -30,11 +29,6 @@ export default function Home() {
   const [busy, setBusy] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [receiveCode, setReceiveCode] = useState("");
-  const [rcvStatus, setRcvStatus] = useState<"idle" | "working" | "success" | "error">("idle");
-  const [rcvMsg, setRcvMsg] = useState("");
-  const [rcvProgress, setRcvProgress] = useState(0);
-  const [rcvFile, setRcvFile] = useState<{ name: string; size: number; url: string } | null>(null);
 
   const pct = useMemo(() => Math.round(progress * 100), [progress]);
 
@@ -64,6 +58,35 @@ export default function Home() {
     });
   }
 
+  function uploadChunk(
+    url: string,
+    body: Blob,
+    onProgress: (uploadedBytes: number, totalBytes: number) => void,
+  ): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const request = new XMLHttpRequest();
+
+      request.open("PUT", url);
+      request.setRequestHeader("Content-Type", "application/octet-stream");
+      request.upload.onprogress = (event) => {
+        if (event.lengthComputable) {
+          onProgress(event.loaded, event.total);
+        }
+      };
+      request.onload = () => {
+        if (request.status >= 200 && request.status < 300) {
+          onProgress(body.size, body.size);
+          resolve();
+          return;
+        }
+        reject(new Error(`Upload failed with status ${request.status}`));
+      };
+      request.onerror = () => reject(new Error("Upload failed"));
+      request.onabort = () => reject(new Error("Upload cancelled"));
+      request.send(body);
+    });
+  }
+
   function selectFile(f: File | null) {
     if (!f) return;
     if (f.size > MAX_FILE_BYTES) {
@@ -78,6 +101,11 @@ export default function Home() {
 
   async function sendFile(): Promise<void> {
     if (!file) return;
+    if (!isSignedIn) {
+      setStatus("error");
+      setStatusMsg("Please sign in to upload files.");
+      return;
+    }
     setBusy(true);
     setStatus("working");
     setProgress(0);
@@ -101,18 +129,18 @@ export default function Home() {
       const data = (await res.json()) as CreateShareResponse | { error: string };
       if (!res.ok || "error" in data) throw new Error("error" in data ? data.error : "Failed");
       setShareCode(data.code);
+      setStatusMsg("Preparing encryption...");
       const key = await keyFromCode(data.code, salt);
       for (const chunk of data.chunks) {
         const start = chunk.idx * data.chunkSize;
         const plain = file.slice(start, Math.min(start + data.chunkSize, file.size));
         setStatusMsg(`Encrypting & uploading ${chunk.idx + 1}/${data.chunkCount}`);
         const enc = await encryptChunk(plain, chunk.idx, key);
-        const up = await fetch(chunk.putUrl, {
-          method: "PUT",
-          headers: { "Content-Type": "application/octet-stream" },
-          body: enc,
+        setProgress(chunk.idx / data.chunkCount);
+        await uploadChunk(chunk.putUrl, enc, (uploadedBytes, totalBytes) => {
+          const chunkProgress = totalBytes > 0 ? uploadedBytes / totalBytes : 0;
+          setProgress((chunk.idx + chunkProgress) / data.chunkCount);
         });
-        if (!up.ok) throw new Error(`Chunk ${chunk.idx + 1} upload failed`);
         await authFetch(`/api/files/${data.fileId}/chunks/${chunk.idx}`, { method: "PUT" });
         setProgress((chunk.idx + 1) / data.chunkCount);
       }
@@ -131,37 +159,6 @@ export default function Home() {
     await navigator.clipboard.writeText(shareCode);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
-  }
-
-  async function receiveFile(): Promise<void> {
-    const code = receiveCode.trim().toUpperCase();
-    if (!code) return;
-    setRcvStatus("working"); setRcvProgress(0); setRcvFile(null);
-    try {
-      setRcvMsg("Looking up code...");
-      const res = await fetch(`/api/receive/${encodeURIComponent(code)}`);
-      const data = (await res.json()) as ReceiveManifest | { error: string };
-      if (!res.ok || "error" in data) throw new Error("error" in data ? data.error : "Not found");
-      const target = data.files[0];
-      if (!target) throw new Error("No files found");
-      if (!target.completed) throw new Error("Upload not finished yet");
-      const key = await keyFromCode(code, target.salt);
-      const parts: Blob[] = [];
-      for (const chunk of target.chunks) {
-        setRcvMsg(`Downloading ${chunk.idx + 1}/${target.chunkCount}`);
-        const dl = await fetch(chunk.getUrl);
-        if (!dl.ok) throw new Error(`Chunk ${chunk.idx + 1} failed`);
-        parts.push(await decryptChunk(await dl.blob(), chunk.idx, key));
-        setRcvProgress((chunk.idx + 1) / target.chunkCount);
-      }
-      setRcvFile({ name: target.filename, size: target.sizeBytes, url: URL.createObjectURL(new Blob(parts)) });
-      setRcvStatus("success");
-    } catch (e) { setRcvStatus("error"); setRcvMsg(e instanceof Error ? e.message : "Download failed"); }
-  }
-
-  function downloadRcvFile() {
-    if (!rcvFile) return;
-    const a = document.createElement("a"); a.href = rcvFile.url; a.download = rcvFile.name; a.click();
   }
 
   // 3D tilt handlers
@@ -304,19 +301,35 @@ export default function Home() {
 
               {/* Working state */}
               {status === "working" && (
-                <div className="flex items-center gap-3 text-left">
-                  <div className="w-10 h-10 rounded-xl bg-[rgba(124,111,255,0.15)] flex items-center justify-center text-lg shrink-0 animate-[enc-pulse_2s_infinite]">🔐</div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium truncate">{file?.name}</p>
-                    <p className="text-xs text-[var(--muted)]">{statusMsg}</p>
-                    <div className="h-1 mt-2 rounded-full bg-[rgba(255,255,255,0.08)] overflow-hidden">
-                      <div
-                        className="h-full rounded-full bg-[var(--grad)] transition-all duration-300"
-                        style={{ width: `${pct}%` }}
-                      />
+                <div className="flex flex-col gap-4 text-left">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-[rgba(124,111,255,0.15)] flex items-center justify-center text-lg shrink-0 animate-[enc-pulse_2s_infinite]">🔐</div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium truncate">{file?.name}</p>
+                      <p className="text-xs text-[var(--muted)]">{statusMsg}</p>
+                      <div className="h-1 mt-2 rounded-full bg-[rgba(255,255,255,0.08)] overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-[var(--grad)] transition-all duration-300"
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
+                      <p className="text-[10px] text-[var(--muted)] mt-1">{pct}%</p>
                     </div>
-                    <p className="text-[10px] text-[var(--muted)] mt-1">{pct}%</p>
                   </div>
+                  {shareCode && (
+                    <div
+                      className="flex items-center w-full rounded-xl bg-[rgba(124,111,255,0.08)] border border-[rgba(124,111,255,0.25)] overflow-hidden"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <span className="flex-1 px-4 py-3 text-sm font-mono text-[var(--violet2)] tracking-wider">{shareCode}</span>
+                      <button
+                        className="px-4 py-3 bg-[var(--grad)] text-white text-xs font-semibold hover:opacity-80 transition-opacity"
+                        onClick={copyCode}
+                      >
+                        {copied ? "Copied!" : "Copy"}
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -353,71 +366,25 @@ export default function Home() {
               {status === "error" && (
                 <div className="flex flex-col items-center gap-3">
                   <p className="text-sm text-red-400">{statusMsg}</p>
-                  <button
-                    className="text-sm text-[var(--violet2)] hover:text-[var(--text)] transition-colors"
-                    onClick={(e) => { e.stopPropagation(); setStatus("idle"); }}
-                  >
-                    Try again
-                  </button>
+                  {!isSignedIn ? (
+                    <SignInButton mode="modal">
+                      <button className="px-4 py-2 rounded-xl bg-[var(--grad)] text-white text-sm font-bold hover:opacity-85 transition-opacity">
+                        Sign In to Upload
+                      </button>
+                    </SignInButton>
+                  ) : (
+                    <button
+                      className="text-sm text-[var(--violet2)] hover:text-[var(--text)] transition-colors"
+                      onClick={(e) => { e.stopPropagation(); setStatus("idle"); }}
+                    >
+                      Try again
+                    </button>
+                  )}
                 </div>
               )}
             </div>
 
-            {/* Receive file inline */}
-            <div className="px-5 py-4 border-t border-[var(--border)]">
-              {rcvStatus === "idle" && (
-                <>
-                  <p className="text-xs text-[var(--muted)] mb-2 text-center">Have a code? Enter it to download.</p>
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      placeholder="Enter share code"
-                      value={receiveCode}
-                      onChange={(e) => setReceiveCode(e.target.value.toUpperCase())}
-                      className="flex-1 px-3 py-2.5 rounded-xl bg-[rgba(124,111,255,0.06)] border border-[rgba(124,111,255,0.2)] text-sm font-semibold text-center uppercase tracking-wider text-[var(--text)] placeholder:text-[var(--muted)] placeholder:normal-case placeholder:tracking-normal placeholder:font-normal focus:border-[var(--violet)] transition-colors"
-                      maxLength={12}
-                      autoComplete="off"
-                      spellCheck={false}
-                      onClick={(e) => e.stopPropagation()}
-                    />
-                    <button
-                      onClick={(e) => { e.stopPropagation(); receiveFile(); }}
-                      disabled={!receiveCode.trim()}
-                      className="px-4 py-2.5 rounded-xl bg-[var(--grad)] text-white text-xs font-bold hover:opacity-85 transition-opacity shrink-0 disabled:opacity-40"
-                    >
-                      Receive
-                    </button>
-                  </div>
-                </>
-              )}
-              {rcvStatus === "working" && (
-                <div onClick={(e) => e.stopPropagation()}>
-                  <p className="text-xs text-[var(--muted)] mb-2 text-center">{rcvMsg}</p>
-                  <div className="h-1.5 rounded-full bg-[rgba(255,255,255,0.08)] overflow-hidden">
-                    <div className="h-full rounded-full transition-all duration-300" style={{ width: `${Math.round(rcvProgress * 100)}%`, background: "linear-gradient(90deg,#7c6fff,#a78bfa,#00d9ff)" }} />
-                  </div>
-                </div>
-              )}
-              {rcvStatus === "success" && rcvFile && (
-                <div className="flex flex-col gap-2" onClick={(e) => e.stopPropagation()}>
-                  <div className="flex items-center gap-3 p-2 rounded-xl bg-[rgba(16,185,129,0.08)] border border-[rgba(16,185,129,0.2)]">
-                    <span className="text-lg">📄</span>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-xs font-semibold truncate">{rcvFile.name}</p>
-                      <p className="text-[10px] text-[var(--muted)]">{formatBytes(rcvFile.size)}</p>
-                    </div>
-                    <button onClick={downloadRcvFile} className="px-3 py-1.5 rounded-lg bg-[var(--grad)] text-white text-[10px] font-bold shrink-0">Save</button>
-                  </div>
-                  <button onClick={() => { setRcvStatus("idle"); setReceiveCode(""); setRcvFile(null); }} className="text-[10px] text-[var(--muted)] text-center">Receive another</button>
-                </div>
-              )}
-              {rcvStatus === "error" && (
-                <div className="text-center" onClick={(e) => e.stopPropagation()}>
-                  <p className="text-xs text-red-400 mb-1">{rcvMsg}</p>
-                  <button onClick={() => setRcvStatus("idle")} className="text-[10px] text-[var(--muted)]">Try again</button>
-                </div>
-              )}
-            </div>
+
           </div>
         </div>
       </section>
@@ -449,45 +416,9 @@ export default function Home() {
         {/* Bento Grid - 12 columns */}
         <div className="reveal grid grid-cols-12 gap-5">
 
-          {/* Card 1 - Speed (col-span-8) */}
+          {/* Card 2 - Encryption (col-span-6) */}
           <div
-            className="col-span-12 md:col-span-8 relative group rounded-3xl border border-[var(--border)] bg-[var(--glass)] backdrop-blur-sm p-8 transition-all duration-300 overflow-hidden"
-            onMouseMove={handleTilt}
-            onMouseLeave={handleTiltLeave}
-          >
-            <div className="absolute inset-0 rounded-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none bg-[radial-gradient(circle_at_50%_50%,rgba(124,111,255,0.08),transparent_70%)]" />
-            <p className="text-[11px] font-bold tracking-[0.1em] uppercase text-[var(--violet2)] mb-2">Performance</p>
-            <h3 className="text-lg font-bold mb-1 tracking-tight">Uploads that don&apos;t make you wait.</h3>
-            <p className="text-sm text-[var(--muted)] mb-6">Multi-threaded chunked uploads hit speeds your ISP can handle. We won&apos;t be the bottleneck.</p>
-            <div className="flex flex-col gap-3">
-              <div className="flex items-center gap-3">
-                <span className="text-xs text-[var(--violet2)] font-bold w-14 shrink-0">Flock</span>
-                <div className="flex-1 h-2 rounded-full bg-[rgba(255,255,255,0.06)] overflow-hidden">
-                  <div className="h-full rounded-full" style={{ width: "92%", background: "linear-gradient(90deg, #7c6fff, #a78bfa, #00d9ff)" }} />
-                </div>
-                <span className="text-xs font-bold text-[var(--violet2)] w-16 text-right">920 MB/s</span>
-              </div>
-              <div className="flex items-center gap-3">
-                <span className="text-xs text-[var(--muted)] w-14 shrink-0">Others</span>
-                <div className="flex-1 h-2 rounded-full bg-[rgba(255,255,255,0.06)] overflow-hidden">
-                  <div className="h-full rounded-full" style={{ width: "48%", background: "var(--rose)" }} />
-                </div>
-                <span className="text-xs font-bold text-[var(--rose)] w-16 text-right">480 MB/s</span>
-              </div>
-              <div className="flex items-center gap-3">
-                <span className="text-xs text-[var(--muted)] w-14 shrink-0">Email</span>
-                <div className="flex-1 h-2 rounded-full bg-[rgba(255,255,255,0.06)] overflow-hidden">
-                  <div className="h-full rounded-full" style={{ width: "31%", background: "#f59e0b" }} />
-                </div>
-                <span className="text-xs font-bold text-amber-400 w-16 text-right">25 MB</span>
-              </div>
-              <p className="text-[11px] text-[var(--muted)] mt-3">Measured on 1Gbps connection, average of 1000 transfers</p>
-            </div>
-          </div>
-
-          {/* Card 2 - Encryption (col-span-4, row-span-2) */}
-          <div
-            className="col-span-12 md:col-span-4 md:row-span-2 relative group rounded-3xl border border-[var(--border)] bg-[var(--glass)] backdrop-blur-sm p-8 transition-all duration-300 overflow-hidden"
+            className="col-span-12 md:col-span-6 relative group rounded-3xl border border-[var(--border)] bg-[var(--glass)] backdrop-blur-sm p-8 transition-all duration-300 overflow-hidden"
             onMouseMove={handleTilt}
             onMouseLeave={handleTiltLeave}
           >
@@ -519,38 +450,39 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Card 5 - Zero friction (col-span-6) */}
-          <div
-            className="col-span-12 md:col-span-6 relative group rounded-3xl border border-[var(--border)] bg-[var(--glass)] backdrop-blur-sm p-8 transition-all duration-300 overflow-hidden"
-            onMouseMove={handleTilt}
-            onMouseLeave={handleTiltLeave}
-          >
-            <div className="absolute inset-0 rounded-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none bg-[radial-gradient(circle_at_50%_50%,rgba(255,107,157,0.08),transparent_70%)]" />
-            <div className="flex items-center justify-between gap-8 h-full">
-              <div>
-                <p className="text-[11px] font-bold tracking-[0.1em] uppercase text-[var(--rose)] mb-2">Zero friction</p>
-                <h3 className="text-lg font-bold mb-2 tracking-tight leading-tight">No account.<br/>No waiting.<br/>Just share.</h3>
-                <p className="text-sm text-[var(--muted)]">Open tab → drop file → copy link. Done in under 10 seconds.</p>
-              </div>
-              <div className="flex flex-col items-center gap-2 shrink-0">
-                <div className="w-[72px] h-[72px] rounded-full bg-gradient-to-br from-[rgba(255,107,157,0.2)] to-[rgba(124,111,255,0.2)] border-2 border-[rgba(255,107,157,0.3)] flex items-center justify-center text-3xl animate-[float_4s_ease-in-out_infinite] shadow-[0_0_40px_rgba(255,107,157,0.15)]">
-                  🕊
-                </div>
-                <span className="text-[11px] font-bold text-[var(--muted)] tracking-widest uppercase">10 sec</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Card 6 - CDN (col-span-6) */}
+          {/* Card 6 - Global Availability (col-span-6) */}
           <div
             className="col-span-12 md:col-span-6 relative group rounded-3xl border border-[var(--border)] bg-[var(--glass)] backdrop-blur-sm p-8 transition-all duration-300 overflow-hidden"
             onMouseMove={handleTilt}
             onMouseLeave={handleTiltLeave}
           >
             <div className="absolute inset-0 rounded-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none bg-[radial-gradient(circle_at_50%_50%,rgba(0,217,255,0.08),transparent_70%)]" />
-            <h3 className="text-base font-bold mb-1 tracking-tight">Global CDN delivery</h3>
-            <p className="text-sm text-[var(--muted)] mb-4">Files delivered from edge nodes worldwide. Blazing fast downloads everywhere.</p>
-            <div className="text-4xl font-black grad-text">120+ edge nodes</div>
+            <p className="text-[11px] font-bold tracking-[0.1em] uppercase text-[var(--violet2)] mb-2">Global Availability</p>
+            <h3 className="text-base font-bold mb-1 tracking-tight">Always available, everywhere</h3>
+            <p className="text-sm text-[var(--muted)] mb-6">Your files are ready the moment you need them, no matter where you are.</p>
+            <div className="flex flex-col gap-4">
+              <div className="flex items-center gap-3 p-3 rounded-xl bg-[rgba(0,217,255,0.05)] border border-[rgba(0,217,255,0.15)]">
+                <span className="text-lg">🌍</span>
+                <div>
+                  <p className="text-xs font-bold">Global Reach</p>
+                  <p className="text-[10px] text-[var(--muted)]">Served from 300+ cities worldwide</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 p-3 rounded-xl bg-[rgba(0,217,255,0.05)] border border-[rgba(0,217,255,0.15)]">
+                <span className="text-lg">⚡</span>
+                <div>
+                  <p className="text-xs font-bold">Instant Access</p>
+                  <p className="text-[10px] text-[var(--muted)]">Zero delay when you need a file</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 p-3 rounded-xl bg-[rgba(0,217,255,0.05)] border border-[rgba(0,217,255,0.15)]">
+                <span className="text-lg">🛡️</span>
+                <div>
+                  <p className="text-xs font-bold">Highly Reliable</p>
+                  <p className="text-[10px] text-[var(--muted)]">Built-in redundancy, never lost</p>
+                </div>
+              </div>
+            </div>
           </div>
 
         </div>
@@ -605,7 +537,7 @@ export default function Home() {
             <p className="text-sm text-[var(--muted)] mb-7">forever, no card needed</p>
             <div className="h-px bg-[var(--border)] mb-7" />
             <div className="flex flex-col gap-3 mb-8 text-sm text-[var(--muted)]">
-              <span>✦ Up to 2 GB per file</span>
+              <span>✦ 1 GiB per file</span>
               <span>✦ 7-day expiry</span>
               <span>✦ 10 transfers/month</span>
               <span>✦ Basic encryption</span>

@@ -11,6 +11,7 @@ export default function Cursor() {
       my = 0,
       rx = 0,
       ry = 0;
+    let animationFrameId: number;
 
     const handleMove = (e: MouseEvent) => {
       mx = e.clientX;
@@ -31,7 +32,7 @@ export default function Cursor() {
         ringRef.current.style.left = `${rx}px`;
         ringRef.current.style.top = `${ry}px`;
       }
-      requestAnimationFrame(animate);
+      animationFrameId = requestAnimationFrame(animate);
     }
     animate();
 
@@ -58,6 +59,7 @@ export default function Cursor() {
     bindHoverables();
 
     return () => {
+      cancelAnimationFrame(animationFrameId);
       document.removeEventListener("mousemove", handleMove);
       observer.disconnect();
     };

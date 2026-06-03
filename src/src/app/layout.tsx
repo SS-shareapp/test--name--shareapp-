@@ -24,9 +24,13 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const publishableKey =
-    process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ??
-    "pk_test_Y2xlcmsubG9jYWxob3N0JA";
+  const publishableKey = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
+
+  if (!publishableKey) {
+    throw new Error(
+      "Missing NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY. Start Next.js with your 1Password-provided environment loaded.",
+    );
+  }
 
   return (
     <ClerkProvider publishableKey={publishableKey}>

@@ -87,7 +87,10 @@ button {
   font-family: inherit;
   border: none;
   cursor: none;
-  outline: none;
+}
+button:focus-visible {
+  outline: 2px solid var(--violet);
+  outline-offset: 2px;
 }
 button:disabled {
   cursor: not-allowed;
@@ -95,8 +98,11 @@ button:disabled {
 }
 input {
   font-family: inherit;
-  outline: none;
   border: none;
+}
+input:focus-visible {
+  outline: 2px solid var(--violet);
+  outline-offset: 2px;
 }
 
 /* ─── Custom Cursor ─── */
