@@ -44,7 +44,7 @@
   --shadow: 0 4px 24px rgba(108,92,231,0.08);
   --shadow-lg: 0 16px 56px rgba(108,92,231,0.13);
   --card-bg: var(--bg2);
-  --nav-bg: rgba(247, 246, 255, 0.82);
+  --nav-bg: rgba(247, 246, 255, 0.3);
   --white: #ffffff;
 }
 
