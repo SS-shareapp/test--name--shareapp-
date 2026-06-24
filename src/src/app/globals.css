@@ -2,6 +2,8 @@
 
 /* ─── Design System Custom Properties ─── */
 :root {
+  color-scheme: dark;
+  --cursor-dot: #ffffff;
   --bg: #04040f;
   --bg2: #080818;
   --glass: rgba(255, 255, 255, 0.035);
@@ -26,6 +28,8 @@
 
 /* Light mode */
 [data-theme="light"] {
+  color-scheme: light;
+  --cursor-dot: var(--text);
   --bg: #f7f6ff;
   --bg2: #f0eeff;
   --glass: rgba(255, 255, 255, 0.7);
@@ -111,7 +115,7 @@ input:focus-visible {
   position: fixed;
   width: 8px;
   height: 8px;
-  background: #ffffff;
+  background: var(--cursor-dot);
   border-radius: 50%;
   pointer-events: none;
   z-index: 2147483647;
