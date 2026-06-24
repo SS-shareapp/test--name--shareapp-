@@ -44,7 +44,7 @@
   --shadow: 0 4px 24px rgba(108,92,231,0.08);
   --shadow-lg: 0 16px 56px rgba(108,92,231,0.13);
   --card-bg: var(--bg2);
-  --nav-bg: rgba(247, 246, 255, 0.3);
+  --nav-bg: rgba(247, 246, 255, 0.82);
   --white: #ffffff;
 }
 
@@ -106,6 +106,7 @@ input:focus-visible {
 }
 
 /* ─── Custom Cursor ─── */
+/* Above Clerk modals/overlays (Clerk uses ~100000) */
 .cursor-dot {
   position: fixed;
   width: 8px;
@@ -113,7 +114,7 @@ input:focus-visible {
   background: #ffffff;
   border-radius: 50%;
   pointer-events: none;
-  z-index: 9999;
+  z-index: 2147483647;
   transform: translate(-50%, -50%);
   transition: transform 0.1s ease;
 }
@@ -125,7 +126,7 @@ input:focus-visible {
   border: 1.5px solid var(--violet);
   border-radius: 50%;
   pointer-events: none;
-  z-index: 9998;
+  z-index: 2147483646;
   transform: translate(-50%, -50%);
   transition: width 0.3s ease, height 0.3s ease, border-color 0.3s ease;
 }
