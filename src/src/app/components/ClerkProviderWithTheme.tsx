@@ -1,6 +1,7 @@
 "use client";
 
 import { ClerkProvider } from "@clerk/nextjs";
+import { dark } from "@clerk/themes";
 import { useEffect, useState } from "react";
 
 function useAppTheme() {
@@ -36,26 +37,13 @@ export default function ClerkProviderWithTheme({
     <ClerkProvider
       publishableKey={publishableKey}
       appearance={{
+        theme: isDark ? dark : undefined,
         layout: {
           unsafe_disableDevelopmentModeWarnings: true,
         },
-        variables: isDark
-          ? {
-              colorBackground: "#080818",
-              colorInputBackground: "#04040f",
-              colorText: "#f4f2ff",
-              colorTextSecondary: "rgba(244, 242, 255, 0.45)",
-              colorPrimary: "#7c6fff",
-              colorDanger: "#ff6b9d",
-            }
-          : {
-              colorBackground: "#f7f6ff",
-              colorInputBackground: "#ffffff",
-              colorText: "#160d3a",
-              colorTextSecondary: "#8577a8",
-              colorPrimary: "#6c5ce7",
-              colorDanger: "#f97066",
-            },
+        variables: {
+          colorPrimary: isDark ? "#7c6fff" : "#6c5ce7",
+        },
       }}
     >
       {children}
