@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { Poppins } from "next/font/google";
-import { ClerkProvider } from "@clerk/nextjs";
+import ClerkProviderWithTheme from "./components/ClerkProviderWithTheme";
 import BackgroundCanvas from "./components/BackgroundCanvas";
 import Cursor from "./components/Cursor";
 import VideoBg from "./components/VideoBg";
@@ -33,7 +33,7 @@ export default function RootLayout({
   }
 
   return (
-    <ClerkProvider publishableKey={publishableKey}>
+    <ClerkProviderWithTheme publishableKey={publishableKey}>
       <html lang="en" className={poppins.variable}>
         <body>
           <VideoBg />
@@ -42,6 +42,6 @@ export default function RootLayout({
           {children}
         </body>
       </html>
-    </ClerkProvider>
+    </ClerkProviderWithTheme>
   );
 }

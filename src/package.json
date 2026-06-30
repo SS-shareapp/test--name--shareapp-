@@ -12,6 +12,7 @@
     "@aws-sdk/client-s3": "^3.812.0",
     "@aws-sdk/s3-request-presigner": "^3.812.0",
     "@clerk/nextjs": "^6.19.0",
+    "@clerk/themes": "^2.4.57",
     "@tailwindcss/postcss": "^4.3.0",
     "clsx": "^2.1.1",
     "framer-motion": "^12.40.0",
