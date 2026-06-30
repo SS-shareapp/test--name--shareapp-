@@ -17,6 +17,10 @@ export const metadata: Metadata = {
   title: "Flock — Share Files, Freely",
   description:
     "Drop your files. Get a link instantly. No sign-up, no limits, no nonsense.",
+  icons: {
+    icon: "/icon.png",
+    apple: "/icon.png",
+  },
 };
 
 export default function RootLayout({
