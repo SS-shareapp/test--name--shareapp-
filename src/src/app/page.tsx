@@ -6,6 +6,7 @@ import { DEFAULT_CHUNK_SIZE, MAX_FILE_BYTES } from "@/lib/constants";
 import { encryptChunk, decryptChunk, keyFromCode, randomSalt, sha256Hex } from "@/lib/browser-crypto";
 import { formatBytes } from "@/lib/utils";
 import Nav from "./components/Nav";
+import BrandMark from "./components/BrandMark";
 
 type UploadChunk = { idx: number; putUrl: string };
 type CreateShareResponse = {
@@ -265,7 +266,7 @@ export default function Home() {
               {status === "idle" && !file && (
                 <div className="flex flex-col items-center gap-3">
                   <div className="w-16 h-16 rounded-2xl bg-[rgba(124,111,255,0.12)] flex items-center justify-center text-3xl mb-2">
-                    🕊
+                    <BrandMark className="h-7 w-7" />
                   </div>
                   <p className="text-lg font-semibold text-[var(--text)]">Drop your files anywhere</p>
                   <p className="text-sm text-[var(--muted)]">or <span className="text-[var(--violet2)] font-medium">browse</span> to upload</p>
@@ -628,7 +629,7 @@ export default function Home() {
           {/* Brand */}
           <div className="flex flex-col gap-3">
             <div className="flex items-center gap-2 text-lg font-bold">
-              <span>🕊</span>
+              <BrandMark className="h-5 w-5" />
               <span className="grad-text">flock</span>
             </div>
             <p className="text-sm text-[var(--muted)] leading-relaxed">

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { decryptChunk, keyFromCode } from "@/lib/browser-crypto";
 import { formatBytes } from "@/lib/utils";
 import Nav from "../components/Nav";
+import BrandMark from "../components/BrandMark";
 
 type ReceiveManifest = {
   code: string;
@@ -76,7 +77,7 @@ export default function ReceivePage() {
         <div className="w-full max-w-md rounded-3xl border border-[var(--border)] bg-[var(--glass)] backdrop-blur-xl p-10 text-center">
           {/* Icon */}
           <div className="w-20 h-20 mx-auto mb-7 rounded-full bg-gradient-to-br from-[rgba(124,111,255,0.2)] to-[rgba(0,217,255,0.15)] border-2 border-[rgba(124,111,255,0.3)] flex items-center justify-center text-4xl animate-[float_4s_ease-in-out_infinite]">
-            🕊
+            <BrandMark className="h-10 w-10" />
           </div>
 
           {/* Idle */}

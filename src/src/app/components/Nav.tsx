@@ -3,6 +3,7 @@
 import { SignedIn, SignedOut, SignInButton, UserButton } from "@clerk/nextjs";
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import BrandMark from "./BrandMark";
 
 export default function Nav() {
   const [theme, setTheme] = useState<"dark" | "light">("dark");
@@ -26,7 +27,7 @@ export default function Nav() {
     <nav className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-6 md:px-14 py-5 bg-[var(--nav-bg)] backdrop-blur-xl border-b border-[var(--border)]">
       {/* Logo */}
       <Link href="/" className="flex items-center gap-2.5">
-        <span className="text-3xl">🕊</span>
+        <BrandMark className="h-8 w-8" theme={theme} />
         <span className="text-2xl font-bold grad-text">
           flock
         </span>

@@ -3,6 +3,7 @@ import { Poppins } from "next/font/google";
 import ClerkProviderWithTheme from "./components/ClerkProviderWithTheme";
 import BackgroundCanvas from "./components/BackgroundCanvas";
 import Cursor from "./components/Cursor";
+import ThemeAssets from "./components/ThemeAssets";
 import VideoBg from "./components/VideoBg";
 import "./globals.css";
 
@@ -17,6 +18,9 @@ export const metadata: Metadata = {
   title: "Flock — Share Files, Freely",
   description:
     "Drop your files. Get a link instantly. No sign-up, no limits, no nonsense.",
+  icons: {
+    icon: "/icon.svg",
+  },
 };
 
 export default function RootLayout({
@@ -36,6 +40,7 @@ export default function RootLayout({
     <ClerkProviderWithTheme publishableKey={publishableKey}>
       <html lang="en" className={poppins.variable}>
         <body>
+          <ThemeAssets />
           <VideoBg />
           <BackgroundCanvas />
           <Cursor />
