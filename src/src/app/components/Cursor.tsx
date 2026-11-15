@@ -14,6 +14,7 @@ export default function Cursor() {
 
   useEffect(() => {
     if (!mounted) return;
+    if (window.matchMedia('(pointer: coarse)').matches) return;
     let mx = 0,
       my = 0,
       rx = 0,
@@ -32,12 +33,11 @@ export default function Cursor() {
       ry += (my - ry) * 0.13;
 
       if (dotRef.current) {
-        dotRef.current.style.left = `${mx}px`;
-        dotRef.current.style.top = `${my}px`;
+        dotRef.current.style.transform = `translate3d(${mx}px, ${my}px, 0) translate(-50%, -50%)`;
       }
       if (ringRef.current) {
-        ringRef.current.style.left = `${rx}px`;
-        ringRef.current.style.top = `${ry}px`;
+        const scale = ringRef.current.classList.contains("hover") ? " scale(1.4)" : "";
+        ringRef.current.style.transform = `translate3d(${rx}px, ${ry}px, 0) translate(-50%, -50%)${scale}`;
       }
       animationFrameId = requestAnimationFrame(animate);
     }

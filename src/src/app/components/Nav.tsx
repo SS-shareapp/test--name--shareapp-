@@ -3,6 +3,7 @@
 import { SignedIn, SignedOut, SignInButton, UserButton } from "@clerk/nextjs";
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { Moon, Sun, ArrowDownLeft } from "lucide-react";
 import BrandMark from "./BrandMark";
 
 export default function Nav() {
@@ -24,7 +25,7 @@ export default function Nav() {
   }
 
   return (
-    <nav className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-6 md:px-14 py-5 bg-[var(--nav-bg)] backdrop-blur-xl border-b border-[var(--border)]">
+    <nav aria-label="Main navigation" className="site-nav fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-6 md:px-14 py-5 bg-[var(--nav-bg)] backdrop-blur-xl border-b border-[var(--border)]">
       {/* Logo */}
       <Link href="/" className="flex items-center gap-2.5">
         <BrandMark className="h-8 w-8" theme={theme} />
@@ -35,19 +36,19 @@ export default function Nav() {
 
       {/* Center links */}
       <div className="hidden md:flex items-center gap-9">
-        <a href="#how" className="text-sm font-medium text-[var(--muted)] hover:text-[var(--text)] transition-colors">How it works</a>
-        <a href="#pricing" className="text-sm font-medium text-[var(--muted)] hover:text-[var(--text)] transition-colors">Pricing</a>
-        <a href="#" className="text-sm font-medium text-[var(--muted)] hover:text-[var(--text)] transition-colors">Docs</a>
+        <Link href="/#how" className="text-sm font-medium text-[var(--muted)] hover:text-[var(--text)] transition-colors">How it works</Link>
+        <Link href="/#pricing" className="text-sm font-medium text-[var(--muted)] hover:text-[var(--text)] transition-colors">Pricing</Link>
+        <a href="https://github.com/SS-shareapp/test--name--shareapp-" className="text-sm font-medium text-[var(--muted)] hover:text-[var(--text)] transition-colors">Source code</a>
       </div>
 
       {/* Right side */}
       <div className="flex items-center gap-3">
         <button
           onClick={toggleTheme}
-          aria-label="Toggle theme"
+          aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
           className="w-9 h-9 rounded-full border border-[var(--border)] flex items-center justify-center text-sm hover:border-[var(--violet)] transition-colors"
         >
-          {theme === "dark" ? "☀️" : "🌙"}
+          {theme === "dark" ? <Sun size={17} /> : <Moon size={17} />}
         </button>
         <SignedOut>
           <SignInButton mode="modal">
@@ -61,9 +62,9 @@ export default function Nav() {
         </SignedIn>
         <Link
           href="/receive"
-          className="bg-[var(--grad)] text-white px-5 py-2.5 rounded-full text-sm font-semibold hover:opacity-85 transition-opacity"
+          className="nav-receive bg-[var(--grad)] text-white px-5 py-2.5 rounded-full text-sm font-semibold hover:opacity-85 transition-opacity"
         >
-          Receive File
+          <ArrowDownLeft size={16} /> Receive file
         </Link>
       </div>
     </nav>

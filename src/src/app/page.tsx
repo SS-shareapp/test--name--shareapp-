@@ -3,10 +3,12 @@
 import { SignedIn, SignedOut, SignInButton, useAuth } from "@clerk/nextjs";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { DEFAULT_CHUNK_SIZE, MAX_FILE_BYTES } from "@/lib/constants";
-import { encryptChunk, decryptChunk, keyFromCode, randomSalt, sha256Hex } from "@/lib/browser-crypto";
+import { encryptChunk, keyFromCode, randomSalt, sha256Hex } from "@/lib/browser-crypto";
 import { formatBytes } from "@/lib/utils";
 import Nav from "./components/Nav";
 import BrandMark from "./components/BrandMark";
+import Link from "next/link";
+import { ArrowUpRight, Upload, File, LockKeyhole, KeyRound, Clock3, Download, ShieldCheck } from "lucide-react";
 
 type UploadChunk = { idx: number; putUrl: string };
 type CreateShareResponse = {
@@ -89,7 +91,7 @@ export default function Home() {
   }
 
   function selectFile(f: File | null) {
-    if (!f) return;
+    if (!f || busy) return;
     if (f.size > MAX_FILE_BYTES) {
       setStatus("error");
       setStatusMsg("File exceeds 1 GiB limit.");
@@ -98,6 +100,8 @@ export default function Home() {
     setFile(f);
     setShareCode("");
     setStatus("idle");
+    setCopied(false);
+    setStatusMsg("");
   }
 
   async function sendFile(): Promise<void> {
@@ -147,6 +151,7 @@ export default function Home() {
       }
       const complete = await authFetch(`/api/files/${data.fileId}/complete`, { method: "POST" });
       if (!complete.ok) throw new Error("Could not finalize upload");
+      setStatusMsg("");
       setStatus("success");
     } catch (e) {
       setStatus("error");
@@ -157,100 +162,77 @@ export default function Home() {
   }
 
   async function copyCode() {
-    await navigator.clipboard.writeText(shareCode);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    try {
+      await navigator.clipboard.writeText(shareCode);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setStatusMsg("Copy unavailable. Select the code and copy it manually.");
+    }
   }
-
-  // 3D tilt handlers
-  function handleTilt(e: React.MouseEvent<HTMLDivElement>) {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const x = (e.clientX - rect.left) / rect.width - 0.5;
-    const y = (e.clientY - rect.top) / rect.height - 0.5;
-    e.currentTarget.style.transform = `perspective(800px) rotateY(${x * 6}deg) rotateX(${-y * 6}deg) translateY(-6px)`;
-  }
-  function handleTiltLeave(e: React.MouseEvent<HTMLDivElement>) {
-    e.currentTarget.style.transform = "";
-  }
-
-  const steps = [
-    { num: "01", title: "Drop your file", desc: "Drag and drop any file, or browse. Any size up to 1 GiB.", pct: 25 },
-    { num: "02", title: "We encrypt it", desc: "AES-256-GCM encryption happens in your browser. Zero-knowledge.", pct: 50 },
-    { num: "03", title: "Get your code", desc: "A unique share code is generated. The code IS the decryption key.", pct: 75 },
-    { num: "04", title: "Share anywhere", desc: "Send the code via any channel. Recipient enters it to download.", pct: 100 },
-  ];
-
-  const marqueeItems = [
-    "End-to-end encrypted",
-    "No file size limits",
-    "Zero-knowledge",
-    "Self-destructing",
-    "Global CDN",
-    "Chunked uploads",
-    "No account needed",
-    "AES-256-GCM",
-  ];
 
   return (
     <>
       <Nav />
 
       {/* ─── HERO ─── */}
-      <section className="relative z-10 min-h-screen flex items-center pt-24 pb-20 px-6 md:px-14">
+      <section id="send" className="hero relative z-10 min-h-screen flex items-center pt-24 pb-20 px-6 md:px-14">
         <div className="max-w-7xl mx-auto w-full grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
           {/* Left column */}
           <div className="flex flex-col gap-6" style={{ animation: "fadeUp 0.8s ease both" }}>
+            <p className="eyebrow"><span className="status-dot" /> A little code. A lot of possibility.</p>
             <h1 className="text-5xl md:text-7xl font-extrabold leading-[1.05] tracking-tight">
               Share files<br />
-              <em className="italic font-light">like a </em><span className="grad-text">flock.</span>
+              <span className="grad-text">keep it simple.</span>
             </h1>
 
             <p className="text-base md:text-lg text-[var(--muted)] max-w-md leading-relaxed">
-              Drop your files. Get a code instantly. End-to-end encrypted, no sign-up required. Just share and fly.
+              From your browser to theirs. Drop a file, share the code, and let Flock take care of the rest.
             </p>
 
             <div className="flex items-center gap-3 mt-2">
               <SignedIn>
                 <button
-                  className="bg-[var(--grad)] text-white px-7 py-3.5 rounded-full text-base font-semibold hover:shadow-[0_20px_60px_rgba(124,111,255,0.4)] hover:-translate-y-0.5 transition-all disabled:opacity-50"
+                  className="primary-action bg-[var(--grad)] text-white px-7 py-3.5 rounded-full text-base font-semibold hover:shadow-[0_20px_60px_rgba(124,111,255,0.4)] hover:-translate-y-0.5 transition-[transform,opacity,box-shadow] disabled:opacity-50"
                   onClick={file ? sendFile : () => fileInputRef.current?.click()}
                   disabled={busy || status === "working"}
                 >
-                  {status === "working" ? "Uploading..." : "Upload Files"}
+                  {status === "working" ? "Uploading\u2026" : "Send a file"}
                 </button>
               </SignedIn>
               <SignedOut>
                 <SignInButton mode="modal">
-                  <button className="bg-[var(--grad)] text-white px-7 py-3.5 rounded-full text-base font-semibold hover:shadow-[0_20px_60px_rgba(124,111,255,0.4)] hover:-translate-y-0.5 transition-all">
-                    Upload Files
+                  <button className="primary-action bg-[var(--grad)] text-white px-7 py-3.5 rounded-full text-base font-semibold hover:shadow-[0_20px_60px_rgba(124,111,255,0.4)] hover:-translate-y-0.5 transition-[transform,opacity,box-shadow]">
+                    Send a file
                   </button>
                 </SignInButton>
               </SignedOut>
+              <Link href="/receive" className="secondary-action">Receive a file <ArrowUpRight size={17} /></Link>
             </div>
+            <p className="hero-note"><ShieldCheck size={16} /> Encrypted in your browser <span>·</span> Up to 1 GiB</p>
           </div>
 
           {/* Right column - Upload Card */}
           <div
-            className="relative rounded-3xl border border-[var(--border)] bg-[rgba(255,255,255,0.08)] backdrop-blur-2xl p-1 shadow-2xl"
+            className="upload-panel relative rounded-3xl border border-[var(--border)]"
             style={{ animation: "fadeUp 0.8s 0.2s ease both" }}
           >
-            {/* macOS dots */}
-            <div className="flex items-center gap-2 px-5 py-3 border-b border-[var(--border)] animate-[float_6s_ease-in-out_infinite]">
-              <span className="w-3 h-3 rounded-full bg-[#ff5f57]" />
-              <span className="w-3 h-3 rounded-full bg-[#febc2e]" />
-              <span className="w-3 h-3 rounded-full bg-[#28c840]" />
-              <span className="ml-4 text-xs text-[var(--muted)]">flock — upload</span>
+            <div className="upload-panel-heading">
+              <span><Upload size={18} /> Send a file</span>
+              <span className="private-label"><LockKeyhole size={12} /> Private transfer</span>
             </div>
 
             {/* Drop zone */}
             <div
               className={`drop-zone m-4 rounded-2xl border-2 border-dashed p-10 transition-all text-center ${
                 dragOver
-                  ? "border-[var(--violet)] bg-[rgba(124,111,255,0.08)]"
+                  ? "border-[var(--violet)] bg-[rgba(124,111,255,0.08)] shadow-[inset_0_0_50px_rgba(124,111,255,0.2)]"
                   : "border-[rgba(255,255,255,0.1)] hover:border-[var(--violet)] hover:bg-[rgba(124,111,255,0.04)]"
               }`}
-              onClick={() => fileInputRef.current?.click()}
-              onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+              role="region"
+              aria-label="File upload"
+              onClick={() => { if (!busy && status === "idle") fileInputRef.current?.click(); }}
+              onDragOver={(e) => { e.preventDefault(); if (!busy) setDragOver(true); }}
               onDragLeave={(e) => { e.preventDefault(); setDragOver(false); }}
               onDrop={(e) => { e.preventDefault(); setDragOver(false); selectFile(e.dataTransfer.files[0]); }}
             >
@@ -266,10 +248,11 @@ export default function Home() {
               {status === "idle" && !file && (
                 <div className="flex flex-col items-center gap-3">
                   <div className="w-16 h-16 rounded-2xl bg-[rgba(124,111,255,0.12)] flex items-center justify-center text-3xl mb-2">
-                    <BrandMark className="h-7 w-7" />
+                    <Upload className="h-7 w-7" />
                   </div>
-                  <p className="text-lg font-semibold text-[var(--text)]">Drop your files anywhere</p>
-                  <p className="text-sm text-[var(--muted)]">or <span className="text-[var(--violet2)] font-medium">browse</span> to upload</p>
+                  <p className="text-lg font-semibold text-[var(--text)]">Drop your file here</p>
+                  <p className="text-sm text-[var(--muted)]">or choose one from your device</p>
+                  <button type="button" className="browse-button" onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}>Browse files <ArrowUpRight size={16} /></button>
                   <div className="flex gap-2 mt-3">
                     {[".zip", ".mp4", ".pdf", ".png", ".any"].map((t) => (
                       <span key={t} className="text-[10px] px-2 py-1 rounded-full bg-[rgba(255,255,255,0.05)] text-[var(--muted)] border border-[var(--border)]">
@@ -284,65 +267,54 @@ export default function Home() {
               {status === "idle" && file && (
                 <div className="flex flex-col items-center gap-4">
                   <div className="flex items-center gap-3 text-left w-full">
-                    <div className="w-10 h-10 rounded-xl bg-[rgba(124,111,255,0.15)] flex items-center justify-center text-lg shrink-0">📄</div>
+                    <div className="w-10 h-10 rounded-xl bg-[rgba(124,111,255,0.15)] flex items-center justify-center text-lg shrink-0">{<File size={23} />}</div>
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-medium truncate">{file.name}</p>
                       <p className="text-xs text-[var(--muted)]">{formatBytes(file.size)}</p>
                     </div>
                   </div>
                   <button
-                    className="w-full py-3 rounded-xl bg-[var(--grad)] text-white text-sm font-bold hover:shadow-[0_12px_40px_rgba(124,111,255,0.4)] hover:-translate-y-0.5 transition-all disabled:opacity-50"
+                    className="w-full py-3 rounded-xl bg-[var(--grad)] text-white text-sm font-bold hover:shadow-[0_12px_40px_rgba(124,111,255,0.4)] hover:-translate-y-0.5 transition-[transform,opacity,box-shadow] disabled:opacity-50"
                     onClick={(e) => { e.stopPropagation(); sendFile(); }}
                     disabled={busy}
                   >
                     Upload & Get Code
                   </button>
+                  <button type="button" className="text-xs text-[var(--muted)] underline underline-offset-4" onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}>Choose a different file</button>
                 </div>
               )}
 
               {/* Working state */}
               {status === "working" && (
-                <div className="flex flex-col gap-4 text-left">
+                <div className="flex flex-col gap-4 text-left" aria-live="polite" aria-atomic="true">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-[rgba(124,111,255,0.15)] flex items-center justify-center text-lg shrink-0 animate-[enc-pulse_2s_infinite]">🔐</div>
+                    <div className="w-10 h-10 rounded-xl bg-[rgba(124,111,255,0.15)] flex items-center justify-center text-lg shrink-0 animate-[enc-pulse_2s_infinite]">{<LockKeyhole size={23} />}</div>
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-medium truncate">{file?.name}</p>
                       <p className="text-xs text-[var(--muted)]">{statusMsg}</p>
                       <div className="h-1 mt-2 rounded-full bg-[rgba(255,255,255,0.08)] overflow-hidden">
                         <div
-                          className="h-full rounded-full bg-[var(--grad)] transition-all duration-300"
+                          className="h-full rounded-full bg-[var(--grad)] transition-[width] duration-300"
                           style={{ width: `${pct}%` }}
                         />
                       </div>
-                      <p className="text-[10px] text-[var(--muted)] mt-1">{pct}%</p>
+                      <p className="text-[10px] text-[var(--muted)] mt-1 tabular-nums">{pct}%</p>
                     </div>
                   </div>
-                  {shareCode && (
-                    <div
-                      className="flex items-center w-full rounded-xl bg-[rgba(124,111,255,0.08)] border border-[rgba(124,111,255,0.25)] overflow-hidden"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <span className="flex-1 px-4 py-3 text-sm font-mono text-[var(--violet2)] tracking-wider">{shareCode}</span>
-                      <button
-                        className="px-4 py-3 bg-[var(--grad)] text-white text-xs font-semibold hover:opacity-80 transition-opacity"
-                        onClick={copyCode}
-                      >
-                        {copied ? "Copied!" : "Copy"}
-                      </button>
-                    </div>
-                  )}
+
                 </div>
               )}
 
               {/* Success state */}
               {status === "success" && (
-                <div className="flex flex-col items-center gap-4">
+                <div className="flex flex-col items-center gap-4" aria-live="assertive">
                   <div className="w-16 h-16 rounded-full bg-[rgba(40,200,64,0.15)] border-2 border-[rgba(40,200,64,0.4)] flex items-center justify-center text-2xl text-green-400">
                     ✓
                   </div>
-                  <p className="text-lg font-bold">Your share code</p>
+                  <p className="text-lg font-bold">Ready to share</p>
+                  <p className="text-sm text-[var(--muted)]">Send this code to your recipient.</p>
                   <div className="flex items-center w-full rounded-xl bg-[rgba(124,111,255,0.08)] border border-[rgba(124,111,255,0.25)] overflow-hidden">
-                    <span className="flex-1 px-4 py-3 text-sm font-mono text-[var(--violet2)] tracking-wider">{shareCode}</span>
+                    <span className="select-all min-w-0 flex-1 px-4 py-3 text-sm font-mono text-[var(--violet2)] tracking-wider">{shareCode}</span>
                     <button
                       className="px-4 py-3 bg-[var(--grad)] text-white text-xs font-semibold hover:opacity-80 transition-opacity"
                       onClick={(e) => { e.stopPropagation(); copyCode(); }}
@@ -350,9 +322,10 @@ export default function Home() {
                       {copied ? "Copied!" : "Copy"}
                     </button>
                   </div>
+                  <p className="text-xs text-[var(--muted)]" role="status">{statusMsg.startsWith("Copy unavailable") ? statusMsg : ""}</p>
                   <div className="flex gap-3 text-[10px] text-[var(--muted)]">
-                    <span>🔒 256-bit encrypted</span>
-                    <span>⏱ Auto-expires</span>
+                    <span>AES-256 encrypted</span>
+                    <span>Auto-expires</span>
                   </div>
                   <button
                     className="mt-2 text-sm text-[var(--violet2)] hover:text-[var(--text)] transition-colors"
@@ -365,11 +338,11 @@ export default function Home() {
 
               {/* Error state */}
               {status === "error" && (
-                <div className="flex flex-col items-center gap-3">
+                <div className="flex flex-col items-center gap-3" role="alert">
                   <p className="text-sm text-red-400">{statusMsg}</p>
                   {!isSignedIn ? (
                     <SignInButton mode="modal">
-                      <button className="px-4 py-2 rounded-xl bg-[var(--grad)] text-white text-sm font-bold hover:opacity-85 transition-opacity">
+                      <button onClick={(e) => e.stopPropagation()} className="px-4 py-2 rounded-xl bg-[var(--grad)] text-white text-sm font-bold hover:opacity-85 transition-opacity">
                         Sign In to Upload
                       </button>
                     </SignInButton>
@@ -384,138 +357,62 @@ export default function Home() {
                 </div>
               )}
             </div>
-
-
+            <div className="upload-panel-footer"><span><ShieldCheck size={14} /> Encrypted before it leaves your device</span><span>1 GiB max</span></div>
           </div>
         </div>
       </section>
 
-      {/* ─── MARQUEE ─── */}
-      <section className="relative z-10 py-10 border-y border-[var(--border)] overflow-hidden">
-        <div className="flex animate-[marquee_30s_linear_infinite]" style={{ width: "max-content" }}>
-          {[...marqueeItems, ...marqueeItems].map((item, i) => (
-            <span key={i} className="mx-8 text-sm font-medium text-[var(--muted)] whitespace-nowrap flex items-center gap-2">
-              <span className="w-1 h-1 rounded-full bg-[var(--violet)]" />
-              {item}
-            </span>
-          ))}
-        </div>
-      </section>
-
-      {/* ─── FEATURES BENTO ─── */}
+      {/* ─── FEATURES ─── */}
       <section id="features" className="relative z-10 py-28 px-6 md:px-14 max-w-7xl mx-auto">
         <div className="reveal mb-16">
           <p className="text-xs font-semibold tracking-[0.15em] uppercase text-[var(--violet2)] mb-4">Why choose flock</p>
           <h2 className="text-4xl md:text-5xl font-extrabold tracking-tight mb-5">
             Everything you need.<br /><em className="italic font-light">Nothing you don&apos;t.</em>
           </h2>
-          <p className="text-base text-[var(--muted)] max-w-md">
-            Forget clunky UIs and paywalls. Flock is frictionless, fast, and privacy-first.
-          </p>
         </div>
 
-        {/* Bento Grid - 12 columns */}
-        <div className="reveal grid grid-cols-12 gap-5">
-
-          {/* Card 2 - Encryption (col-span-6) */}
-          <div
-            className="col-span-12 md:col-span-6 relative group rounded-3xl border border-[var(--border)] bg-[var(--glass)] backdrop-blur-sm p-8 transition-all duration-300 overflow-hidden"
-            onMouseMove={handleTilt}
-            onMouseLeave={handleTiltLeave}
-          >
-            <div className="absolute inset-0 rounded-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none bg-[radial-gradient(circle_at_50%_50%,rgba(0,217,255,0.08),transparent_70%)]" />
-            <h3 className="text-base font-bold mb-1 tracking-tight">End-to-end encrypted</h3>
-            <p className="text-sm text-[var(--muted)] mb-6">Zero-knowledge architecture. Even we can&apos;t read your files.</p>
-            <div className="flex flex-col gap-4">
-              <div className="flex items-center gap-3 p-3 rounded-xl bg-[rgba(0,217,255,0.05)] border border-[rgba(0,217,255,0.15)] animate-[pulse_4s_infinite]">
-                <span className="text-lg">📁</span>
-                <div>
-                  <p className="text-xs font-bold">RAW</p>
-                  <p className="text-[10px] text-[var(--muted)]">Your original file</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-3 p-3 rounded-xl bg-[rgba(0,217,255,0.05)] border border-[rgba(0,217,255,0.15)] animate-[pulse_4s_0.5s_infinite]">
-                <span className="text-lg">🔐</span>
-                <div>
-                  <p className="text-xs font-bold">LOCAL</p>
-                  <p className="text-[10px] text-[var(--muted)]">Encrypted in browser</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-3 p-3 rounded-xl bg-[rgba(0,217,255,0.05)] border border-[rgba(0,217,255,0.15)] animate-[pulse_4s_1s_infinite]">
-                <span className="text-lg">☁️</span>
-                <div>
-                  <p className="text-xs font-bold">SAFE</p>
-                  <p className="text-[10px] text-[var(--muted)]">Stored encrypted</p>
-                </div>
-              </div>
-            </div>
+        <div className="reveal grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="rounded-3xl border border-[var(--border)] bg-[var(--glass)] backdrop-blur-sm p-10 flex flex-col justify-center min-h-[240px]">
+            <span className="text-[var(--violet2)] mb-4 text-2xl"><LockKeyhole size={24} /></span>
+            <p className="text-lg font-medium leading-relaxed">Your file never leaves your browser unencrypted.</p>
           </div>
-
-          {/* Card 6 - Global Availability (col-span-6) */}
-          <div
-            className="col-span-12 md:col-span-6 relative group rounded-3xl border border-[var(--border)] bg-[var(--glass)] backdrop-blur-sm p-8 transition-all duration-300 overflow-hidden"
-            onMouseMove={handleTilt}
-            onMouseLeave={handleTiltLeave}
-          >
-            <div className="absolute inset-0 rounded-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none bg-[radial-gradient(circle_at_50%_50%,rgba(0,217,255,0.08),transparent_70%)]" />
-            <p className="text-[11px] font-bold tracking-[0.1em] uppercase text-[var(--violet2)] mb-2">Global Availability</p>
-            <h3 className="text-base font-bold mb-1 tracking-tight">Always available, everywhere</h3>
-            <p className="text-sm text-[var(--muted)] mb-6">Your files are ready the moment you need them, no matter where you are.</p>
-            <div className="flex flex-col gap-4">
-              <div className="flex items-center gap-3 p-3 rounded-xl bg-[rgba(0,217,255,0.05)] border border-[rgba(0,217,255,0.15)]">
-                <span className="text-lg">🌍</span>
-                <div>
-                  <p className="text-xs font-bold">Global Reach</p>
-                  <p className="text-[10px] text-[var(--muted)]">Served from 300+ cities worldwide</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-3 p-3 rounded-xl bg-[rgba(0,217,255,0.05)] border border-[rgba(0,217,255,0.15)]">
-                <span className="text-lg">⚡</span>
-                <div>
-                  <p className="text-xs font-bold">Instant Access</p>
-                  <p className="text-[10px] text-[var(--muted)]">Zero delay when you need a file</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-3 p-3 rounded-xl bg-[rgba(0,217,255,0.05)] border border-[rgba(0,217,255,0.15)]">
-                <span className="text-lg">🛡️</span>
-                <div>
-                  <p className="text-xs font-bold">Highly Reliable</p>
-                  <p className="text-[10px] text-[var(--muted)]">Built-in redundancy, never lost</p>
-                </div>
-              </div>
-            </div>
+          <div className="rounded-3xl border border-[var(--border)] bg-[var(--glass)] backdrop-blur-sm p-10 flex flex-col justify-center min-h-[240px]">
+            <span className="text-[var(--violet2)] mb-4 text-2xl"><KeyRound size={24} /></span>
+            <p className="text-lg font-medium leading-relaxed">The code is the key. No code, no file.</p>
           </div>
-
+          <div className="rounded-3xl border border-[var(--border)] bg-[var(--glass)] backdrop-blur-sm p-10 flex flex-col justify-center min-h-[240px]">
+            <span className="text-[var(--violet2)] mb-4 text-2xl"><Clock3 size={24} /></span>
+            <p className="text-lg font-medium leading-relaxed">A temporary home for your file. Automatically deleted after expiry.</p>
+          </div>
         </div>
       </section>
 
-      {/* ─── HOW IT WORKS ─── */}
+      {/* ─── THE JOURNEY ─── */}
       <section id="how" className="relative z-10 py-28 px-6 md:px-14 max-w-7xl mx-auto">
-        <div className="reveal text-center mb-16">
-          <p className="text-xs font-semibold tracking-[0.15em] uppercase text-[var(--violet2)] mb-4">How it works</p>
-          <h2 className="text-4xl md:text-5xl font-extrabold tracking-tight">Four steps to <em className="italic font-light">total</em> freedom.</h2>
+        <div className="reveal text-center mb-20">
+          <p className="text-xs font-semibold tracking-[0.15em] uppercase text-[var(--violet2)] mb-4">The journey of your file</p>
+          <h2 className="text-4xl md:text-5xl font-extrabold tracking-tight">One file. One code. That’s it.</h2>
         </div>
-        <div className="reveal grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8 relative">
-          {/* Connecting line */}
-          <div className="hidden lg:block absolute top-8 left-[12%] right-[12%] h-px bg-gradient-to-r from-transparent via-[var(--violet)] to-transparent" />
-          {steps.map((s, i) => (
-            <div key={i} className="text-center relative z-10">
-              <div className="w-16 h-16 rounded-full border border-[rgba(124,111,255,0.3)] bg-[var(--bg2)] flex items-center justify-center mx-auto mb-5 relative">
-                {/* Conic gradient progress ring */}
-                <div
-                  className="absolute inset-[-3px] rounded-full"
-                  style={{
-                    background: `conic-gradient(var(--violet) ${s.pct}%, transparent ${s.pct}%)`,
-                    mask: "radial-gradient(farthest-side, transparent calc(100% - 3px), #fff calc(100% - 3px))",
-                    WebkitMask: "radial-gradient(farthest-side, transparent calc(100% - 3px), #fff calc(100% - 3px))",
-                  }}
-                />
-                <span className="text-xl font-extrabold grad-text">{s.num}</span>
-              </div>
-              <h4 className="text-sm font-bold mb-2">{s.title}</h4>
-              <p className="text-xs text-[var(--muted)] leading-relaxed">{s.desc}</p>
-            </div>
-          ))}
+
+        <div className="reveal max-w-4xl mx-auto flex flex-col md:flex-row items-center justify-between gap-8 relative">
+          <div className="flex flex-col items-center text-center max-w-[200px]">
+            <div className="w-16 h-16 rounded-2xl bg-[rgba(124,111,255,0.1)] border border-[rgba(124,111,255,0.2)] flex items-center justify-center text-2xl mb-4">{<File size={23} />}</div>
+            <p className="text-sm font-bold mb-1">Local File</p>
+            <p className="text-xs text-[var(--muted)]">Select your file</p>
+          </div>
+
+          <div className="flex-1 flex items-center justify-center px-4 relative w-full md:w-auto h-24 md:h-auto">
+             <div className="absolute inset-0 md:inset-y-auto md:left-0 md:right-0 h-[1px] md:top-1/2 -translate-y-1/2 border-dashed border-b border-[rgba(124,111,255,0.3)]"></div>
+             <div className="bg-[var(--bg)] px-4 py-2 rounded-xl border border-[rgba(124,111,255,0.2)] relative z-10 text-[var(--violet2)] font-mono tracking-widest text-lg font-bold shadow-[0_0_30px_rgba(124,111,255,0.2)]">
+               A7KH3M9X2P
+             </div>
+          </div>
+
+          <div className="flex flex-col items-center text-center max-w-[200px]">
+            <div className="w-16 h-16 rounded-2xl bg-[rgba(124,111,255,0.1)] border border-[rgba(124,111,255,0.2)] flex items-center justify-center text-2xl mb-4"><Download size={23} /></div>
+            <p className="text-sm font-bold mb-1">Decrypted</p>
+            <p className="text-xs text-[var(--muted)]">Recipient downloads</p>
+          </div>
         </div>
       </section>
 
@@ -524,28 +421,26 @@ export default function Home() {
         <div className="reveal text-center mb-16">
           <p className="text-xs font-semibold tracking-[0.15em] uppercase text-[var(--violet2)] mb-4">Pricing</p>
           <h2 className="text-4xl md:text-5xl font-extrabold tracking-tight mb-5">Simple, honest pricing</h2>
-          <p className="text-base text-[var(--muted)]">Start free. Upgrade when you need more.</p>
+          <p className="text-base text-[var(--muted)]">Start sharing for free. More ways to share are on the way.</p>
         </div>
         <div className="reveal grid grid-cols-1 md:grid-cols-3 gap-6">
           {/* Free */}
           <div
-            className="price-card rounded-3xl border border-[var(--border)] bg-[var(--glass)] backdrop-blur-sm p-8 transition-all duration-300"
-            onMouseMove={handleTilt}
-            onMouseLeave={handleTiltLeave}
+            className="price-card rounded-3xl border border-[var(--border)] bg-[var(--glass)] backdrop-blur-sm p-8 transition-[transform] duration-300"
           >
             <p className="text-xs font-semibold tracking-widest uppercase text-[var(--muted)] mb-5">Free</p>
             <div className="text-5xl font-extrabold tracking-tight mb-1">$0</div>
             <p className="text-sm text-[var(--muted)] mb-7">forever, no card needed</p>
             <div className="h-px bg-[var(--border)] mb-7" />
             <div className="flex flex-col gap-3 mb-8 text-sm text-[var(--muted)]">
-              <span>✦ 1 GiB per file</span>
-              <span>✦ 7-day expiry</span>
-              <span>✦ 10 transfers/month</span>
-              <span>✦ Basic encryption</span>
+              <span>✦ 1{"\u00a0"}GiB per file</span>
+              <span>✦ Automatic expiry</span>
+              <span>✦ Share with a private code</span>
+              <span>✦ AES-256 encryption</span>
             </div>
-            <button className="w-full py-3 rounded-xl border border-[rgba(124,111,255,0.3)] text-sm font-semibold hover:bg-[rgba(124,111,255,0.1)] transition-colors">
+            <a href="#send" className="block w-full py-3 rounded-xl border border-[rgba(124,111,255,0.3)] text-sm font-semibold text-center hover:bg-[rgba(124,111,255,0.1)] transition-colors">
               Get started free
-            </button>
+            </a>
           </div>
 
           {/* Pro - Featured */}
@@ -553,13 +448,11 @@ export default function Home() {
             {/* Radial glow blob behind Pro card */}
             <div className="absolute -inset-4 rounded-3xl bg-[radial-gradient(circle,rgba(124,111,255,0.2),transparent_70%)] blur-xl pointer-events-none" />
             <div
-              className="price-card relative rounded-3xl bg-[var(--grad)] p-8 transition-all duration-300 scale-[1.03]"
-              onMouseMove={handleTilt}
-              onMouseLeave={handleTiltLeave}
+              className="price-card relative rounded-3xl bg-[var(--grad)] p-8 transition-[transform] duration-300 scale-[1.03]"
             >
-              {/* Most Popular badge */}
+              {/* Coming soon badge */}
               <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-4 py-1 rounded-full bg-white text-[var(--violet)] text-[10px] font-bold uppercase tracking-wider shadow-lg">
-                Most Popular
+                Coming soon
               </div>
               <p className="text-xs font-semibold tracking-widest uppercase text-white/70 mb-5">Pro</p>
               <div className="text-5xl font-extrabold tracking-tight text-white mb-1">$8</div>
@@ -573,17 +466,15 @@ export default function Home() {
                 <span>✦ Password protection</span>
                 <span>✦ Download analytics</span>
               </div>
-              <button className="w-full py-3 rounded-xl bg-white text-[var(--violet)] text-sm font-bold hover:opacity-90 transition-opacity">
-                Start Pro trial
+              <button disabled className="block w-full py-3 rounded-xl bg-white text-[var(--violet)] text-sm font-bold text-center">
+                Coming soon
               </button>
             </div>
           </div>
 
           {/* Team */}
           <div
-            className="price-card rounded-3xl border border-[var(--border)] bg-[var(--glass)] backdrop-blur-sm p-8 transition-all duration-300"
-            onMouseMove={handleTilt}
-            onMouseLeave={handleTiltLeave}
+            className="price-card rounded-3xl border border-[var(--border)] bg-[var(--glass)] backdrop-blur-sm p-8 transition-[transform] duration-300"
           >
             <p className="text-xs font-semibold tracking-widest uppercase text-[var(--muted)] mb-5">Team</p>
             <div className="text-5xl font-extrabold tracking-tight mb-1">$24</div>
@@ -595,8 +486,8 @@ export default function Home() {
               <span>✦ Custom domain</span>
               <span>✦ SSO & audit logs</span>
             </div>
-            <button className="w-full py-3 rounded-xl border border-[rgba(124,111,255,0.3)] text-sm font-semibold hover:bg-[rgba(124,111,255,0.1)] transition-colors">
-              Contact sales
+            <button disabled className="block w-full py-3 rounded-xl border border-[var(--border)] text-sm font-semibold text-center">
+              Coming soon
             </button>
           </div>
         </div>
@@ -613,19 +504,19 @@ export default function Home() {
           </h2>
           <div className="flex flex-col items-center md:items-end gap-3 shrink-0">
             <button
-              className="bg-white text-[var(--violet)] px-8 py-4 rounded-full text-base font-bold hover:shadow-[0_20px_60px_rgba(0,0,0,0.2)] hover:-translate-y-0.5 transition-all"
-              onClick={() => fileInputRef.current?.click()}
+              className="bg-white text-[var(--violet)] px-8 py-4 rounded-full text-base font-bold hover:shadow-[0_20px_60px_rgba(0,0,0,0.2)] hover:-translate-y-0.5 transition-[transform,opacity,box-shadow]"
+              onClick={() => { document.getElementById("send")?.scrollIntoView({ behavior: "smooth" }); fileInputRef.current?.click(); }}
             >
               Upload your first file
             </button>
-            <span className="text-xs text-[var(--muted)]">No account needed · Takes 10 seconds</span>
+            <span className="text-xs text-[var(--muted)]">Sign in to send · No account needed to receive</span>
           </div>
         </div>
       </section>
 
       {/* ─── FOOTER ─── */}
       <footer className="relative z-10 border-t border-[var(--border)] px-6 md:px-14 py-16">
-        <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-4 gap-12 mb-12">
+        <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-12 mb-12">
           {/* Brand */}
           <div className="flex flex-col gap-3">
             <div className="flex items-center gap-2 text-lg font-bold">
@@ -633,29 +524,15 @@ export default function Home() {
               <span className="grad-text">flock</span>
             </div>
             <p className="text-sm text-[var(--muted)] leading-relaxed">
-              Share files freely. End-to-end encrypted, no sign-up required.
+              A simpler way to send. Encrypted in your browser, shared with a code.
             </p>
           </div>
 
-          {/* Product */}
-          <div className="flex flex-col gap-3">
-            <p className="text-xs font-semibold tracking-widest uppercase text-[var(--muted)] mb-1">Product</p>
+          {/* Links */}
+          <div className="flex flex-col gap-3 md:items-end">
+            <p className="text-xs font-semibold tracking-widest uppercase text-[var(--muted)] mb-1">Resources</p>
             <a href="#pricing" className="text-sm text-[var(--muted)] hover:text-[var(--text)] transition-colors">Pricing</a>
-            <a href="#" className="text-sm text-[var(--muted)] hover:text-[var(--text)] transition-colors">Changelog</a>
-            <a href="#" className="text-sm text-[var(--muted)] hover:text-[var(--text)] transition-colors">Status</a>
-          </div>
-
-          {/* Developers */}
-          <div className="flex flex-col gap-3">
-            <p className="text-xs font-semibold tracking-widest uppercase text-[var(--muted)] mb-1">Developers</p>
             <a href="https://github.com/SS-shareapp/test--name--shareapp-" target="_blank" rel="noopener noreferrer" className="text-sm text-[var(--muted)] hover:text-[var(--text)] transition-colors">Open source</a>
-          </div>
-
-          {/* Company */}
-          <div className="flex flex-col gap-3">
-            <p className="text-xs font-semibold tracking-widest uppercase text-[var(--muted)] mb-1">Company</p>
-            <a href="#" className="text-sm text-[var(--muted)] hover:text-[var(--text)] transition-colors">About</a>
-            <a href="#" className="text-sm text-[var(--muted)] hover:text-[var(--text)] transition-colors">Privacy</a>
           </div>
         </div>
 
@@ -663,10 +540,6 @@ export default function Home() {
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4 pt-8 border-t border-[var(--border)]">
           <p className="text-xs text-[var(--muted)]">© 2025 Flock, Inc. All rights reserved.</p>
           <p className="text-xs text-[var(--muted)]">Made by Siddhant & Sanman</p>
-          <div className="flex gap-6 text-xs text-[var(--muted)]">
-            <a href="#" className="hover:text-[var(--text)] transition-colors">Privacy Policy</a>
-            <a href="#" className="hover:text-[var(--text)] transition-colors">Cookie Policy</a>
-          </div>
         </div>
       </footer>
     </>

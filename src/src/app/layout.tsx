@@ -1,23 +1,16 @@
 import type { Metadata } from "next";
-import { Poppins } from "next/font/google";
+import { Manrope, Space_Grotesk } from "next/font/google";
 import ClerkProviderWithTheme from "./components/ClerkProviderWithTheme";
-import BackgroundCanvas from "./components/BackgroundCanvas";
-import Cursor from "./components/Cursor";
 import ThemeAssets from "./components/ThemeAssets";
-import VideoBg from "./components/VideoBg";
 import "./globals.css";
 
-const poppins = Poppins({
-  subsets: ["latin"],
-  weight: ["300", "400", "500", "600", "700", "800", "900"],
-  display: "swap",
-  variable: "--font-poppins",
-});
+const bodyFont = Manrope({ subsets: ["latin"], display: "swap", variable: "--font-body" });
+const displayFont = Space_Grotesk({ subsets: ["latin"], display: "swap", variable: "--font-display" });
 
 export const metadata: Metadata = {
   title: "Flock — Share Files, Freely",
   description:
-    "Drop your files. Get a link instantly. No sign-up, no limits, no nonsense.",
+    "Share a file up to 1 GiB with a private code. Encrypted in your browser, easy to receive.",
   icons: {
     icon: "/icon.svg",
   },
@@ -38,13 +31,11 @@ export default function RootLayout({
 
   return (
     <ClerkProviderWithTheme publishableKey={publishableKey}>
-      <html lang="en" className={poppins.variable}>
+      <html lang="en" className={`${bodyFont.variable} ${displayFont.variable}`}>
         <body>
+          <a href="#main" className="skip-link">Skip to content</a>
           <ThemeAssets />
-          <VideoBg />
-          <BackgroundCanvas />
-          <Cursor />
-          {children}
+          <main id="main">{children}</main>
         </body>
       </html>
     </ClerkProviderWithTheme>

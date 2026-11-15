@@ -32,6 +32,8 @@ export default function BrandMark({ className = "", theme }: BrandMarkProps) {
       src={resolvedTheme === "light" ? "/brandmark-light.svg" : "/brandmark-dark.svg"}
       alt=""
       aria-hidden="true"
+      width={32}
+      height={32}
       className={`brand-mark ${className}`.trim()}
     />
   );

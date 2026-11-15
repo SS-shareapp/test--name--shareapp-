@@ -76,6 +76,8 @@ export default function BackgroundCanvas() {
       opacity: 0.2 + Math.random() * 0.5,
     }));
 
+    const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
     let time = 0;
     let animId: number;
 
@@ -114,69 +116,73 @@ export default function BackgroundCanvas() {
         ctx!.fill();
       }
 
-      // Birds with mouse avoidance
-      const mx = mouseRef.current.x;
-      const my = mouseRef.current.y;
+      // Birds with mouse avoidance (skip if reduced motion)
+      if (!prefersReducedMotion) {
+        const mx = mouseRef.current.x;
+        const my = mouseRef.current.y;
 
-      for (const bird of birds) {
-        // Mouse repulsion
-        const dx = bird.x - mx;
-        const dy = bird.y - my;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist < 120 && dist > 0) {
-          const force = (120 - dist) / 120;
-          bird.vx += (dx / dist) * force * 0.3;
-          bird.vy += (dy / dist) * force * 0.3;
+        for (const bird of birds) {
+          // Mouse repulsion
+          const dx = bird.x - mx;
+          const dy = bird.y - my;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist < 120 && dist > 0) {
+            const force = (120 - dist) / 120;
+            bird.vx += (dx / dist) * force * 0.3;
+            bird.vy += (dy / dist) * force * 0.3;
+          }
+
+          // Tendency to fly right
+          bird.vx += (bird.speed - bird.vx) * 0.02;
+          bird.vy *= 0.98;
+          bird.vy += (Math.sin(time * 0.01 + bird.wingAngle) * 0.02);
+
+          // Clamp velocity
+          const maxV = bird.speed * 2.5;
+          const vel = Math.sqrt(bird.vx * bird.vx + bird.vy * bird.vy);
+          if (vel > maxV) {
+            bird.vx = (bird.vx / vel) * maxV;
+            bird.vy = (bird.vy / vel) * maxV;
+          }
+
+          bird.x += bird.vx;
+          bird.y += bird.vy;
+          bird.wingAngle += bird.wingSpeed;
+
+          // Reset when exiting right
+          if (bird.x > w + 60) {
+            bird.x = -60;
+            bird.y = Math.random() * h * 0.8 + 50;
+            bird.vx = bird.speed;
+            bird.vy = (Math.random() - 0.5) * 0.4;
+          }
+
+          // Keep in vertical bounds
+          if (bird.y < 20) bird.vy += 0.1;
+          if (bird.y > h - 20) bird.vy -= 0.1;
+
+          // Draw bird as two wing arcs
+          const s = bird.size;
+          const wingY = Math.sin(bird.wingAngle) * 10 * s;
+          ctx!.save();
+          ctx!.translate(bird.x, bird.y);
+          ctx!.globalAlpha = bird.opacity;
+          ctx!.strokeStyle = isLight ? "rgba(22, 13, 58, 1)" : "rgba(210, 200, 255, 1)";
+          ctx!.lineWidth = 1.2 * s;
+          ctx!.lineCap = "round";
+          ctx!.beginPath();
+          ctx!.moveTo(0, 0);
+          ctx!.quadraticCurveTo(-14 * s, wingY, -24 * s, wingY * 0.5);
+          ctx!.moveTo(0, 0);
+          ctx!.quadraticCurveTo(14 * s, wingY, 24 * s, wingY * 0.5);
+          ctx!.stroke();
+          ctx!.restore();
         }
-
-        // Tendency to fly right
-        bird.vx += (bird.speed - bird.vx) * 0.02;
-        bird.vy *= 0.98;
-        bird.vy += (Math.sin(time * 0.01 + bird.wingAngle) * 0.02);
-
-        // Clamp velocity
-        const maxV = bird.speed * 2.5;
-        const vel = Math.sqrt(bird.vx * bird.vx + bird.vy * bird.vy);
-        if (vel > maxV) {
-          bird.vx = (bird.vx / vel) * maxV;
-          bird.vy = (bird.vy / vel) * maxV;
-        }
-
-        bird.x += bird.vx;
-        bird.y += bird.vy;
-        bird.wingAngle += bird.wingSpeed;
-
-        // Reset when exiting right
-        if (bird.x > w + 60) {
-          bird.x = -60;
-          bird.y = Math.random() * h * 0.8 + 50;
-          bird.vx = bird.speed;
-          bird.vy = (Math.random() - 0.5) * 0.4;
-        }
-
-        // Keep in vertical bounds
-        if (bird.y < 20) bird.vy += 0.1;
-        if (bird.y > h - 20) bird.vy -= 0.1;
-
-        // Draw bird as two wing arcs
-        const s = bird.size;
-        const wingY = Math.sin(bird.wingAngle) * 10 * s;
-        ctx!.save();
-        ctx!.translate(bird.x, bird.y);
-        ctx!.globalAlpha = bird.opacity;
-        ctx!.strokeStyle = isLight ? "rgba(22, 13, 58, 1)" : "rgba(210, 200, 255, 1)";
-        ctx!.lineWidth = 1.2 * s;
-        ctx!.lineCap = "round";
-        ctx!.beginPath();
-        ctx!.moveTo(0, 0);
-        ctx!.quadraticCurveTo(-14 * s, wingY, -24 * s, wingY * 0.5);
-        ctx!.moveTo(0, 0);
-        ctx!.quadraticCurveTo(14 * s, wingY, 24 * s, wingY * 0.5);
-        ctx!.stroke();
-        ctx!.restore();
       }
 
-      animId = requestAnimationFrame(draw);
+      if (!prefersReducedMotion) {
+        animId = requestAnimationFrame(draw);
+      }
     }
 
     draw();
